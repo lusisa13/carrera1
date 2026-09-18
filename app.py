@@ -2,11 +2,45 @@ import streamlit as st
 # Configuración de la página
 st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏍️", layout="wide")
 
+# ==========================================
+# INICIALIZACIÓN DEL ESTADO (SESSION STATE)
+# ==========================================
+if "pilotos" not in st.session_state:
+    st.session_state.pilotos = []
+    # Pre-cargamos los 110 pilotos de muestra igual que en tu script original
+    for i in range(1, 111):
+        nombre = f"Piloto {i}"
+        if i % 3 == 0:
+            monto = 80000.0
+            situacion = "Pagado"
+            medio = "Efectivo"
+            dest = "Mercedes"
+        elif i % 3 == 1:
+            monto = 0.0
+            situacion = "Adeuda"
+            medio = "Ninguno"
+            dest = "Ninguno"
+        else:
+            monto = 0.0
+            situacion = "Gratis"
+            medio = "Ninguno"
+            dest = "Ninguno"
+
+        st.session_state.pilotos.append({
+            "nombre": nombre,
+            "monto": monto,
+            "medio": medio,
+            "destinatario": dest,
+            "situacion": situacion
+        })
+
 if "gastos" not in st.session_state:
     st.session_state.gastos = []
 
 if "historial" not in st.session_state:
     st.session_state.historial = []
+
+
 # Funciones auxiliares
 def resolver_situacion(opcion_sit, dia_mes=1, monto_custom=0.0, medio_op="Efectivo", dest_op="Mercedes"):
     if opcion_sit == "Pagó Tarifa":
