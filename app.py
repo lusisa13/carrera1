@@ -1,4 +1,5 @@
 import streamlit as st
+from fpdf import FPDF
 
 # Configuración de la página
 st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏍️", layout="wide")
@@ -19,12 +20,12 @@ if "historial" not in st.session_state:
 # Funciones auxiliares
 def resolver_situacion(opcion_sit, dia_mes=1, monto_custom=0.0, medio_op="Efectivo", dest_op="Mercedes"):
     if opcion_sit == "Pagó Tarifa":
-        if dia_mes <= 10:
-            monto = 80000.0
-        elif dia_mes <= 25:
-            monto = 100000.0
+        if dia_mes <= 12:
+            monto = 110000.0
+        elif dia_mes <= 17:
+            monto = 130000.0
         else:
-            monto = 120000.0
+            monto = 140000.0
         return monto, medio_op, dest_op, "Pagado"
 
     elif opcion_sit == "Solo Seguro":
@@ -38,6 +39,103 @@ def resolver_situacion(opcion_sit, dia_mes=1, monto_custom=0.0, medio_op="Efecti
 
     else: # Gratis
         return 0.0, "Ninguno", "Ninguno", "Gratis"
+
+
+def limpiar_texto(texto):
+    """Limpia caracteres especiales para compatibilidad con FPDF."""
+    if not isinstance(texto, str):
+        texto = str(texto)
+    replacements = {
+        'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+        'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U',
+        'ñ': 'n', 'Ñ': 'N', '°': 'o'
+    }
+    for orig, repl in replacements.items():
+        texto = texto.replace(orig, repl)
+    return texto.encode('latin-1', 'replace').decode('latin-1')
+
+
+def generar_pdf(pilotos, tipo_reporte):
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    
+    # Encabezado
+    pdf.cell(0, 10, limpiar_texto("Sistema de Caja - Enduro"), ln=True, align="C")
+    pdf.set_font("Helvetica", "I", 11)
+    
+    if tipo_reporte == "Completo":
+        pdf.cell(0, 8, limpiar_texto("Reporte Completo de Pilotos"), ln=True, align="C")
+    elif tipo_reporte == "Nombre completo con placa y categoría":
+        pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos: Nombre, Placa y Categoria"), ln=True, align="C")
+    else:
+        pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos: Datos de Pago"), ln=True, align="C")
+        
+    pdf.ln(5)
+
+    # Configuración de columnas
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(220, 220, 220)
+
+    if tipo_reporte == "Completo":
+        widths = [10, 45, 20, 30, 25, 20, 20, 20]
+        headers = ["#", "Nombre", "Placa", "Categoria", "Situacion", "Monto", "Medio", "Destino"]
+    elif tipo_reporte == "Nombre completo con placa y categoría":
+        widths = [15, 95, 35, 45]
+        headers = ["#", "Nombre Completo", "Placa / Dorsal", "Categoria"]
+    else: # Nombre y datos de pago
+        widths = [10, 55, 35, 30, 30, 30]
+        headers = ["#", "Nombre Completo", "Situacion", "Monto ($)", "Medio Pago", "Destinatario"]
+
+    # Encabezados de tabla
+    for i, h in enumerate(headers):
+        pdf.cell(widths[i], 8, limpiar_texto(h), border=1, align="C", fill=True)
+    pdf.ln()
+
+    # Filas
+    pdf.set_font("Helvetica", "", 9)
+    for idx, p in enumerate(pilotos, 1):
+        if tipo_reporte == "Completo":
+            row = [
+                str(idx),
+                p["nombre"],
+                p.get("placa", "-"),
+                p.get("categoria", "-"),
+                p["situacion"],
+                f"${p['monto']:,.0f}",
+                p["medio"],
+                p["destinatario"]
+            ]
+        elif tipo_reporte == "Nombre completo con placa y categoría":
+            row = [
+                str(idx),
+                p["nombre"],
+                p.get("placa", "-"),
+                p.get("categoria", "-")
+            ]
+        else: # Nombre y datos de pago
+            row = [
+                str(idx),
+                p["nombre"],
+                p["situacion"],
+                f"${p['monto']:,.0f}",
+                p["medio"],
+                p["destinatario"]
+            ]
+
+        for i, val in enumerate(row):
+            align = "C" if i in [0, 2] else "L"
+            if tipo_reporte in ["Completo", "Nombre y datos de pago"] and i == 3:
+                align = "R" if i == 5 or (tipo_reporte == "Nombre y datos de pago" and i == 3) else align
+            pdf.cell(widths[i], 7, limpiar_texto(val), border=1, align=align)
+        pdf.ln()
+
+    output = pdf.output()
+    if isinstance(output, str):
+        return output.encode('latin1')
+    elif isinstance(output, bytearray):
+        return bytes(output)
+    return output
 
 
 # ==========================================
@@ -54,7 +152,8 @@ menu = st.sidebar.radio(
         "3. Balance de Caja y Seguro",
         "4. Clasificación por Montos",
         "5. Gastos Extra",
-        "6. Historial de Cambios"
+        "6. Historial de Cambios",
+        "7. Exportar PDF"
     ]
 )
 
@@ -65,7 +164,17 @@ if menu == "1. Registrar Piloto":
     st.header("📝 Registrar Nuevo Piloto")
 
     with st.form("form_registro", clear_on_submit=True):
-        nombre = st.text_input("Nombre y Apellido del piloto:")
+        col_n1, col_n2, col_n3 = st.columns([2, 1, 1])
+        with col_n1:
+            nombre = st.text_input("Nombre y Apellido del piloto:")
+        with col_n2:
+            placa = st.text_input("Placa / Dorsal:", value="")
+        with col_n3:
+            categoria = st.selectbox(
+                "Categoría:",
+                ["Sénior", "Júnior", "Master A", "Master B", "Promocional", "Principiantes", "Otra"]
+            )
+
         situacion_op = st.selectbox(
             "Situación del piloto:",
             ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado", "Adeuda", "Gratis"]
@@ -73,7 +182,7 @@ if menu == "1. Registrar Piloto":
 
         col1, col2 = st.columns(2)
         with col1:
-            dia_pago = st.number_input("Día del mes en que abona (1-31):", min_value=1, max_value=31, value=1)
+            dia_pago = st.number_input("Día del mes en que abona (1-31):", min_value=1, max_value=31, value=7)
             monto_personalizado = st.number_input("Monto personalizado ($):", min_value=0.0, value=0.0)
 
         with col2:
@@ -92,13 +201,15 @@ if menu == "1. Registrar Piloto":
 
                 st.session_state.pilotos.append({
                     "nombre": nombre,
+                    "placa": placa if placa.strip() else "-",
+                    "categoria": categoria,
                     "monto": monto,
                     "medio": medio_pago,
                     "destinatario": dest,
                     "situacion": sit_texto
                 })
 
-                log = f"ALTA PILOTO: {nombre} | Situación: {sit_texto} | Monto: ${monto} | Medio: {medio_pago} | Para: {dest}"
+                log = f"ALTA PILOTO: {nombre} | Placa: {placa} | Cat: {categoria} | Situación: {sit_texto} | Monto: ${monto}"
                 st.session_state.historial.append(log)
                 st.success(f"¡Piloto {nombre} registrado con éxito!")
 
@@ -112,15 +223,17 @@ elif menu == "2. Modificar / Eliminar Piloto":
     if not st.session_state.pilotos:
         st.info("No hay pilotos registrados.")
     else:
-        nombres_lista = [f"{i+1}. {p['nombre']} (${p['monto']} - {p['situacion']})" for i, p in enumerate(st.session_state.pilotos)]
+        nombres_lista = [f"{i+1}. {p['nombre']} (Placa: {p.get('placa','-')}) - ${p['monto']}" for i, p in enumerate(st.session_state.pilotos)]
         seleccion = st.selectbox("Seleccione el piloto:", range(len(nombres_lista)), format_func=lambda x: nombres_lista[x])
 
         piloto_actual = st.session_state.pilotos[seleccion]
 
         st.subheader(f"Datos actuales de: {piloto_actual['nombre']}")
         col_a, col_b = st.columns(2)
+        col_a.write(f"**Placa / Dorsal:** {piloto_actual.get('placa', '-')}")
+        col_a.write(f"**Categoría:** {piloto_actual.get('categoria', '-')}")
         col_a.write(f"**Situación:** {piloto_actual['situacion']}")
-        col_a.write(f"**Monto:** ${piloto_actual['monto']}")
+        col_b.write(f"**Monto:** ${piloto_actual['monto']}")
         col_b.write(f"**Medio:** {piloto_actual['medio']}")
         col_b.write(f"**Para:** {piloto_actual['destinatario']}")
 
@@ -129,19 +242,27 @@ elif menu == "2. Modificar / Eliminar Piloto":
         if accion == "Eliminar":
             if st.button("🔴 Confirmar Eliminar", type="primary"):
                 p_borrado = st.session_state.pilotos.pop(seleccion)
-                log = f"BAJA PILOTO: {p_borrado['nombre']} | Situación: {p_borrado['situacion']} | Monto: ${p_borrado['monto']}"
+                log = f"BAJA PILOTO: {p_borrado['nombre']} | Placa: {p_borrado.get('placa','-')}"
                 st.session_state.historial.append(log)
                 st.success("Piloto eliminado correctamente.")
                 st.rerun()
 
         else:
             with st.form("form_modificar"):
-                nuevo_nombre = st.text_input("Nuevo nombre:", value=piloto_actual['nombre'])
+                col_m1, col_m2, col_m3 = st.columns([2, 1, 1])
+                nuevo_nombre = col_m1.text_input("Nuevo nombre:", value=piloto_actual['nombre'])
+                nueva_placa = col_m2.text_input("Nueva placa:", value=piloto_actual.get('placa', ''))
+                
+                cat_actual = piloto_actual.get('categoria', 'Sénior')
+                cats = ["Sénior", "Júnior", "Master A", "Master B", "Promocional", "Principiantes", "Otra"]
+                idx_cat = cats.index(cat_actual) if cat_actual in cats else 0
+                nueva_cat = col_m3.selectbox("Nueva categoría:", cats, index=idx_cat)
+
                 nueva_sit = st.selectbox(
                     "Nueva situación:",
                     ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado", "Adeuda", "Gratis"]
                 )
-                dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=1)
+                dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
                 monto_custom = st.number_input("Monto personalizado ($):", min_value=0.0, value=piloto_actual['monto'])
                 medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
                 destinatario = st.selectbox("Destinatario:", ["Mercedes", "Marcelo", "Lourdes"])
@@ -156,11 +277,13 @@ elif menu == "2. Modificar / Eliminar Piloto":
                             nueva_sit, dia_pago, monto_custom, medio, destinatario
                         )
 
-                        log = f"MODIFICACIÓN PILOTO: {piloto_actual['nombre']} -> {nuevo_nombre} | Monto: ${piloto_actual['monto']} -> ${monto}"
+                        log = f"MODIFICACIÓN PILOTO: {piloto_actual['nombre']} -> {nuevo_nombre}"
                         st.session_state.historial.append(log)
 
                         st.session_state.pilotos[seleccion] = {
                             "nombre": nuevo_nombre,
+                            "placa": nueva_placa if nueva_placa.strip() else "-",
+                            "categoria": nueva_cat,
                             "monto": monto,
                             "medio": medio_pago,
                             "destinatario": dest,
@@ -229,9 +352,9 @@ elif menu == "4. Clasificación por Montos":
         st.info("No hay pilotos registrados.")
     else:
         grupos = [
-            ("Anticipada ($80.000)", 80000.0, None),
-            ("Normal ($100.000)", 100000.0, None),
-            ("Tardía ($120.000)", 120000.0, None),
+            ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, None),
+            ("Tramo 2: Del 13 al 17 ($130.000)", 130000.0, None),
+            ("Tramo 3: Del 18 al 19 ($140.000)", 140000.0, None),
             ("Solo Seguro ($40.000)", 40000.0, None),
             ("Deudores ($0)", None, "Adeuda"),
             ("Gratis ($0)", None, "Gratis"),
@@ -291,3 +414,36 @@ elif menu == "6. Historial de Cambios":
     else:
         for idx, item in enumerate(reversed(st.session_state.historial), 1):
             st.text(f"{idx}. {item}")
+
+
+# ------------------------------------------
+# 7. EXPORTAR PDF
+# ------------------------------------------
+elif menu == "7. Exportar PDF":
+    st.header("📄 Exportar Reporte PDF")
+
+    if not st.session_state.pilotos:
+        st.info("No hay pilotos registrados para generar el PDF.")
+    else:
+        st.write("Selecciona el tipo de informe que deseas generar:")
+
+        opcion_pdf = st.radio(
+            "Opciones de Información del Reporte:",
+            [
+                "Completo",
+                "Nombre completo con placa y categoría",
+                "Nombre y datos de pago"
+            ]
+        )
+
+        st.markdown("---")
+
+        pdf_bytes = generar_pdf(st.session_state.pilotos, opcion_pdf)
+
+        st.download_button(
+            label="⬇️ Descargar Reporte PDF",
+            data=pdf_bytes,
+            file_name=f"reporte_pilotos_{opcion_pdf.lower().replace(' ', '_')}.pdf",
+            mime="application/pdf",
+            type="primary"
+        )
