@@ -476,7 +476,6 @@ elif menu == "6. Historial de Cambios":
         for idx, item in enumerate(reversed(st.session_state.historial), 1):
             st.text(f"{idx}. {item}")
 
-
 # ------------------------------------------
 # 7. EXPORTAR PDF
 # ------------------------------------------
@@ -488,7 +487,18 @@ elif menu == "7. Exportar PDF":
     else:
         st.write("Selecciona el tipo de informe que deseas generar:")
 
-        opcion_pdf = st.radio(
-            "Opciones de Información del Reporte:",
-            [
-              
+        opciones_pdf = ["Completo", "Nombre completo con placa y categoría", "Nombre y datos de pago"]
+        opcion_pdf = st.radio("Opciones de Información del Reporte:", opciones_pdf)
+
+        st.markdown("---")
+
+        pdf_bytes = generar_pdf(st.session_state.pilotos, opcion_pdf)
+        nombre_archivo = f"reporte_pilotos_{opcion_pdf.lower().replace(' ', '_')}.pdf"
+
+        st.download_button(
+            label="⬇️ Descargar Reporte PDF",
+            data=pdf_bytes,
+            file_name=nombre_archivo,
+            mime="application/pdf",
+            type="primary"
+        )
