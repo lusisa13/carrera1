@@ -1,15 +1,8 @@
 import streamlit as st
-import streamlit.components.v1 as components
-import json
-import os
-import base64
 from fpdf import FPDF
 
 # Configuración de la página
-st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏎️", layout="wide")
-
-# Archivo de persistencia local para no perder datos al refrescar
-DATA_FILE = "datos_caja.json"
+st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏍️", layout="wide")
 
 # Lista general de categorías
 CATEGORIAS = [
@@ -20,38 +13,19 @@ CATEGORIAS = [
 ]
 
 # ==========================================
-# GESTIÓN DE PERSISTENCIA (GUARDADO Y CARGA)
+# INICIALIZACIÓN DEL ESTADO (SESSION STATE)
 # ==========================================
-def cargar_datos_disco():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {"pilotos": [], "gastos": [], "historial": []}
+if "pilotos" not in st.session_state:
+    st.session_state.pilotos = []
 
-def guardar_datos_disco():
-    data = {
-        "pilotos": st.session_state.pilotos,
-        "gastos": st.session_state.gastos,
-        "historial": st.session_state.historial
-    }
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+if "gastos" not in st.session_state:
+    st.session_state.gastos = []
 
-# Inicialización de Session State desde archivo local
-if "datos_inicializados" not in st.session_state:
-    datos_guardados = cargar_datos_disco()
-    st.session_state.pilotos = datos_guardados.get("pilotos", [])
-    st.session_state.gastos = datos_guardados.get("gastos", [])
-    st.session_state.historial = datos_guardados.get("historial", [])
-    st.session_state.datos_inicializados = True
+if "historial" not in st.session_state:
+    st.session_state.historial = []
 
 
-# ==========================================
-# FUNCIONES AUXILIARES
-# ==========================================
+# Funciones auxiliares
 def resolver_situacion(opcion_sit, dia_mes=None, monto_custom=0.0, medio_op="Efectivo", dest_op="Mercedes", tarifa_manual=110000.0):
     if opcion_sit == "Pagó Tarifa":
         if dia_mes is not None:
@@ -77,7 +51,7 @@ def resolver_situacion(opcion_sit, dia_mes=None, monto_custom=0.0, medio_op="Efe
     elif opcion_sit == "Adeuda":
         return 0.0, "Ninguno", "Ninguno", "Adeuda"
 
-    else:
+    else: # Gratis
         return 0.0, "Ninguno", "Ninguno", "Gratis"
 
 
@@ -99,184 +73,147 @@ def generar_pdf(pilotos, tipo_reporte):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
+    
+    # Encabezado principal
     pdf.set_font("Helvetica", "B", 16)
-   
-    # Encabezado
     pdf.cell(0, 10, limpiar_texto("Sistema de Caja - Enduro"), ln=True, align="C")
     pdf.set_font("Helvetica", "I", 11)
-   
+
+    # ----------------------------------------------------
+    # REPORTE COMPLETO
+    # ----------------------------------------------------
     if tipo_reporte == "Completo":
-        pdf.cell(0, 8, limpiar_texto("Reporte Completo de Pilotos (Agrupado por Categoria)"), ln=True, align="C")
+        pdf.cell(0, 8, limpiar_texto("Reporte Completo de Pilotos"), ln=True, align="C")
+        pdf.ln(5)
+        
+        # Ordenar por Categoría respetando el orden oficial
+        pilotos_ordenados = sorted(
+            pilotos, 
+            key=lambda x: CATEGORIAS.index(x["categoria"]) if x.get("categoria") in CATEGORIAS else 999
+        )
+
+        widths = [10, 45, 20, 30, 25, 20, 20, 20]
+        headers = ["#", "Nombre", "Placa", "Categoria", "Situacion", "Monto", "Medio", "Destino"]
+
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_fill_color(220, 220, 220)
+        for i, h in enumerate(headers):
+            pdf.cell(widths[i], 8, limpiar_texto(h), border=1, align="C", fill=True)
+        pdf.ln()
+
+        pdf.set_font("Helvetica", "", 8)
+        for idx, p in enumerate(pilotos_ordenados, 1):
+            row = [
+                str(idx),
+                p["nombre"],
+                p.get("placa", "-"),
+                p.get("categoria", "-"),
+                p["situacion"],
+                f"${p['monto']:,.0f}",
+                p["medio"],
+                p["destinatario"]
+            ]
+            for i, val in enumerate(row):
+                align = "C" if i in [0, 2] else ("R" if i == 5 else "L")
+                pdf.cell(widths[i], 7, limpiar_texto(val), border=1, align=align)
+            pdf.ln()
+
+    # ----------------------------------------------------
+    # REPORTE: NOMBRE COMPLETO CON PLACA Y CATEGORÍA (AGRUPADO)
+    # ----------------------------------------------------
     elif tipo_reporte == "Nombre completo con placa y categoría":
-        pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos: Nombre, Placa y Categoria"), ln=True, align="C")
-    elif tipo_reporte == "Nombre y datos de pago (por Categoria)":
-        pdf.cell(0, 8, limpiar_texto("Reporte de Datos de Pago (Agrupado por Categoria)"), ln=True, align="C")
-    else:
-        pdf.cell(0, 8, limpiar_texto("Reporte de Datos de Pago (Separado por Medio y Destinatario)"), ln=True, align="C")
-       
-    pdf.ln(4)
+        pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos Agrupados por Categoria"), ln=True, align="C")
+        pdf.ln(5)
 
-    if tipo_reporte == "Nombre y datos de pago (por Medio/Destinatario)":
-        grupos_pago = {
-            "Efectivo": [],
-            "Transferencia - Mercedes": [],
-            "Transferencia - Marcelo": [],
-            "Transferencia - Lourdes": [],
-            "Otros / Sin Pago": []
-        }
-
-        for p in pilotos:
-            medio = p.get("medio", "Ninguno")
-            dest = p.get("destinatario", "Ninguno")
-
-            if medio == "Efectivo":
-                grupos_pago["Efectivo"].append(p)
-            elif medio == "Transferencia" and dest == "Mercedes":
-                grupos_pago["Transferencia - Mercedes"].append(p)
-            elif medio == "Transferencia" and dest == "Marcelo":
-                grupos_pago["Transferencia - Marcelo"].append(p)
-            elif medio == "Transferencia" and dest == "Lourdes":
-                grupos_pago["Transferencia - Lourdes"].append(p)
-            else:
-                grupos_pago["Otros / Sin Pago"].append(p)
-
-        widths = [10, 50, 25, 35, 30, 30]
-        headers = ["#", "Nombre Completo", "Placa", "Categoria", "Situacion", "Monto ($)"]
-
-        idx_global = 1
-        for nombre_grupo, lista in grupos_pago.items():
-            if not lista:
+        global_idx = 1
+        for cat in CATEGORIAS:
+            pilotos_cat = [p for p in pilotos if p.get("categoria") == cat]
+            if not pilotos_cat:
                 continue
 
+            # Título de Categoría
             pdf.set_font("Helvetica", "B", 10)
-            pdf.set_fill_color(200, 215, 235)
-            tit_grp = f" GRUPO: {nombre_grupo.upper()} ({len(lista)} pilotos)"
-            pdf.cell(0, 7, limpiar_texto(tit_grp), border=1, ln=True, align="L", fill=True)
+            pdf.set_fill_color(200, 220, 240)
+            pdf.cell(0, 7, limpiar_texto(f" CATEGORIA: {cat.upper()} ({len(pilotos_cat)} pilotos)"), border=1, ln=True, fill=True)
 
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.set_fill_color(230, 230, 230)
+            # Encabezados de Tabla
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_fill_color(240, 240, 240)
+            widths = [15, 120, 55]
+            headers = ["#", "Nombre Completo", "Placa / Dorsal"]
             for i, h in enumerate(headers):
-                pdf.cell(widths[i], 6, limpiar_texto(h), border=1, align="C", fill=True)
+                pdf.cell(widths[i], 7, limpiar_texto(h), border=1, align="C", fill=True)
             pdf.ln()
 
-            pdf.set_font("Helvetica", "", 8)
-            subtotal = 0.0
-            for p in lista:
-                nom_p = p.get("nombre", "")
-                plc_p = p.get("placa", "-")
-                cat_p = p.get("categoria", "-")
-                sit_p = p.get("situacion", "-")
-                monto_p = float(p.get("monto", 0.0))
-                subtotal += monto_p
-
-                row = [
-                    str(idx_global),
-                    nom_p,
-                    plc_p,
-                    cat_p,
-                    sit_p,
-                    f"${monto_p:,.0f}"
-                ]
-
-                for i, val in enumerate(row):
-                    align = "C" if i in [0, 2] else ("R" if i == 5 else "L")
-                    pdf.cell(widths[i], 6, limpiar_texto(val), border=1, align=align)
+            # Filas de Pilotos por Categoría
+            pdf.set_font("Helvetica", "", 9)
+            for p in pilotos_cat:
+                pdf.cell(widths[0], 7, str(global_idx), border=1, align="C")
+                pdf.cell(widths[1], 7, limpiar_texto(p["nombre"]), border=1, align="L")
+                pdf.cell(widths[2], 7, limpiar_texto(p.get("placa", "-")), border=1, align="C")
                 pdf.ln()
-                idx_global += 1
-
-            pdf.set_font("Helvetica", "B", 8)
-            sub_str = f"Subtotal {nombre_grupo}:"
-            monto_sub_str = f"${subtotal:,.0f}"
-            pdf.cell(sum(widths[:5]), 6, limpiar_texto(sub_str), border=1, align="R")
-            pdf.cell(widths[5], 6, limpiar_texto(monto_sub_str), border=1, align="R")
-            pdf.ln()
+                global_idx += 1
             pdf.ln(3)
 
+    # ----------------------------------------------------
+    # REPORTE: NOMBRE Y DATOS DE PAGO (SEPARADO POR MEDIO / DESTINATARIO)
+    # ----------------------------------------------------
     else:
-        pilotos_por_cat = {}
-        for p in pilotos:
-            cat = p.get("categoria", "Sin Categoria")
-            if cat not in pilotos_por_cat:
-                pilotos_por_cat[cat] = []
-            pilotos_por_cat[cat].append(p)
+        pdf.cell(0, 8, limpiar_texto("Reporte de Datos de Pago Separados por Medio y Destinatario"), ln=True, align="C")
+        pdf.ln(5)
 
-        if tipo_reporte == "Completo":
-            widths = [10, 45, 20, 30, 25, 20, 20, 20]
-            headers = ["#", "Nombre", "Placa", "Categoria", "Situacion", "Monto", "Medio", "Destino"]
-        elif tipo_reporte == "Nombre completo con placa y categoría":
-            widths = [15, 95, 35, 45]
-            headers = ["#", "Nombre Completo", "Placa / Dorsal", "Categoria"]
-        else:
-            widths = [10, 55, 35, 30, 30, 30]
-            headers = ["#", "Nombre Completo", "Situacion", "Monto ($)", "Medio Pago", "Destinatario"]
+        secciones = [
+            ("Efectivo", lambda p: p.get("medio") == "Efectivo"),
+            ("Transferencia a Mercedes", lambda p: p.get("medio") == "Transferencia" and p.get("destinatario") == "Mercedes"),
+            ("Transferencia a Marcelo", lambda p: p.get("medio") == "Transferencia" and p.get("destinatario") == "Marcelo"),
+            ("Otras Transferencias / Sin Pago", lambda p: not (
+                p.get("medio") == "Efectivo" or 
+                (p.get("medio") == "Transferencia" and p.get("destinatario") in ["Mercedes", "Marcelo"])
+            ))
+        ]
 
-        idx_global = 1
-        for cat, lista_pilotos in pilotos_por_cat.items():
+        global_idx = 1
+        for titulo_sec, filtro in secciones:
+            pilotos_sec = [p for p in pilotos if filtro(p)]
+            if not pilotos_sec:
+                continue
+
+            total_sec = sum(p.get("monto", 0.0) for p in pilotos_sec)
+
+            # Título de Sección
             pdf.set_font("Helvetica", "B", 10)
-            pdf.set_fill_color(200, 215, 235)
-            tit_cat = f" CATEGORIA: {cat.upper()} ({len(lista_pilotos)} pilotos)"
-            pdf.cell(0, 7, limpiar_texto(tit_cat), border=1, ln=True, align="L", fill=True)
+            pdf.set_fill_color(220, 235, 220)
+            pdf.cell(0, 7, limpiar_texto(f" {titulo_sec.upper()} ({len(pilotos_sec)} registros) - Total: ${total_sec:,.0f}"), border=1, ln=True, fill=True)
 
+            # Encabezados
+            widths = [10, 65, 45, 35, 35]
+            headers = ["#", "Nombre Completo", "Categoria", "Situacion", "Monto ($)"]
+            
             pdf.set_font("Helvetica", "B", 8)
-            pdf.set_fill_color(230, 230, 230)
+            pdf.set_fill_color(240, 240, 240)
             for i, h in enumerate(headers):
-                pdf.cell(widths[i], 6, limpiar_texto(h), border=1, align="C", fill=True)
+                pdf.cell(widths[i], 7, limpiar_texto(h), border=1, align="C", fill=True)
             pdf.ln()
 
+            # Filas
             pdf.set_font("Helvetica", "", 8)
-            for p in lista_pilotos:
-                nom_p = p.get("nombre", "")
-                plc_p = p.get("placa", "-")
-                cat_p = p.get("categoria", "-")
-                sit_p = p.get("situacion", "-")
-                monto_p = float(p.get("monto", 0.0))
-                med_p = p.get("medio", "-")
-                dst_p = p.get("destinatario", "-")
-
-                if tipo_reporte == "Completo":
-                    row = [
-                        str(idx_global),
-                        nom_p,
-                        plc_p,
-                        cat_p,
-                        sit_p,
-                        f"${monto_p:,.0f}",
-                        med_p,
-                        dst_p
-                    ]
-                elif tipo_reporte == "Nombre completo con placa y categoría":
-                    row = [
-                        str(idx_global),
-                        nom_p,
-                        plc_p,
-                        cat_p
-                    ]
-                else:
-                    row = [
-                        str(idx_global),
-                        nom_p,
-                        sit_p,
-                        f"${monto_p:,.0f}",
-                        med_p,
-                        dst_p
-                    ]
-
-                for i, val in enumerate(row):
-                    align = "C" if i in [0, 2] else "L"
-                    if tipo_reporte == "Completo" and i == 5:
-                        align = "R"
-                    elif tipo_reporte == "Nombre y datos de pago (por Categoria)" and i == 3:
-                        align = "R"
-                    pdf.cell(widths[i], 6, limpiar_texto(val), border=1, align=align)
+            for p in pilotos_sec:
+                pdf.cell(widths[0], 7, str(global_idx), border=1, align="C")
+                pdf.cell(widths[1], 7, limpiar_texto(p["nombre"]), border=1, align="L")
+                pdf.cell(widths[2], 7, limpiar_texto(p.get("categoria", "-")), border=1, align="L")
+                pdf.cell(widths[3], 7, limpiar_texto(p.get("situacion", "-")), border=1, align="C")
+                pdf.cell(widths[4], 7, limpiar_texto(f"${p.get('monto', 0):,.0f}"), border=1, align="R")
                 pdf.ln()
-                idx_global += 1
+                global_idx += 1
+            pdf.ln(4)
 
-            pdf.ln(3)
-
-    out = pdf.output(dest='S')
+    # Exportación robusta a bytes
+    out = pdf.output()
     if isinstance(out, str):
-        return out.encode('latin-1')
-    return bytes(out)
+        return out.encode('latin1')
+    elif isinstance(out, bytearray):
+        return bytes(out)
+    return out
 
 
 # ==========================================
@@ -292,7 +229,7 @@ opciones_menu = [
     "4. Clasificación por Montos",
     "5. Gastos Extra",
     "6. Historial de Cambios",
-    "7. Exportar / Ver PDF"
+    "7. Exportar PDF"
 ]
 menu = st.sidebar.radio("Menú Principal", opciones_menu)
 
@@ -367,7 +304,6 @@ if menu == "1. Registrar Piloto":
 
                 log = f"ALTA PILOTO: {nombre} | Placa: {placa} | Cat: {categoria} | Situación: {sit_texto} | Monto: ${monto}"
                 st.session_state.historial.append(log)
-                guardar_datos_disco()
                 st.success(f"¡Piloto {nombre} registrado con éxito!")
 
 
@@ -380,44 +316,27 @@ elif menu == "2. Modificar / Eliminar Piloto":
     if not st.session_state.pilotos:
         st.info("No hay pilotos registrados.")
     else:
-        nombres_lista = []
-        for i, p in enumerate(st.session_state.pilotos):
-            nom_p = p.get('nombre', '')
-            plc_p = p.get('placa', '-')
-            mto_p = p.get('monto', 0)
-            nombres_lista.append(f"{i+1}. {nom_p} (Placa: {plc_p}) - ${mto_p}")
-
+        nombres_lista = [f"{i+1}. {p['nombre']} (Placa: {p.get('placa','-')}) - ${p['monto']}" for i, p in enumerate(st.session_state.pilotos)]
         seleccion = st.selectbox("Seleccione el piloto:", range(len(nombres_lista)), format_func=lambda x: nombres_lista[x])
 
         piloto_actual = st.session_state.pilotos[seleccion]
 
-        nom_act = piloto_actual.get('nombre', '')
-        plc_act = piloto_actual.get('placa', '-')
-        cat_act = piloto_actual.get('categoria', '-')
-        sit_act = piloto_actual.get('situacion', '-')
-        mto_act = piloto_actual.get('monto', 0)
-        med_act = piloto_actual.get('medio', '-')
-        dst_act = piloto_actual.get('destinatario', '-')
-
-        st.subheader(f"Datos actuales de: {nom_act}")
+        st.subheader(f"Datos actuales de: {piloto_actual['nombre']}")
         col_a, col_b = st.columns(2)
-        col_a.write(f"**Placa / Dorsal:** {plc_act}")
-        col_a.write(f"**Categoría:** {cat_act}")
-        col_a.write(f"**Situación:** {sit_act}")
-        col_b.write(f"**Monto:** ${mto_act}")
-        col_b.write(f"**Medio:** {med_act}")
-        col_b.write(f"**Para:** {dst_act}")
+        col_a.write(f"**Placa / Dorsal:** {piloto_actual.get('placa', '-')}")
+        col_a.write(f"**Categoría:** {piloto_actual.get('categoria', '-')}")
+        col_a.write(f"**Situación:** {piloto_actual['situacion']}")
+        col_b.write(f"**Monto:** ${piloto_actual['monto']}")
+        col_b.write(f"**Medio:** {piloto_actual['medio']}")
+        col_b.write(f"**Para:** {piloto_actual['destinatario']}")
 
         accion = st.radio("Acción a realizar:", ["Modificar", "Eliminar"], horizontal=True)
 
         if accion == "Eliminar":
             if st.button("🔴 Confirmar Eliminar", type="primary"):
                 p_borrado = st.session_state.pilotos.pop(seleccion)
-                nom_b = p_borrado.get('nombre', '')
-                plc_b = p_borrado.get('placa', '-')
-                log = f"BAJA PILOTO: {nom_b} | Placa: {plc_b}"
+                log = f"BAJA PILOTO: {p_borrado['nombre']} | Placa: {p_borrado.get('placa','-')}"
                 st.session_state.historial.append(log)
-                guardar_datos_disco()
                 st.success("Piloto eliminado correctamente.")
                 st.rerun()
 
@@ -427,10 +346,11 @@ elif menu == "2. Modificar / Eliminar Piloto":
 
             with st.form("form_modificar"):
                 col_m1, col_m2, col_m3 = st.columns([2, 1, 1])
-                nuevo_nombre = col_m1.text_input("Nuevo nombre:", value=nom_act)
-                nueva_placa = col_m2.text_input("Nueva placa:", value=plc_act if plc_act != '-' else '')
+                nuevo_nombre = col_m1.text_input("Nuevo nombre:", value=piloto_actual['nombre'])
+                nueva_placa = col_m2.text_input("Nueva placa:", value=piloto_actual.get('placa', ''))
                
-                idx_cat = CATEGORIAS.index(cat_act) if cat_act in CATEGORIAS else 0
+                cat_actual = piloto_actual.get('categoria', 'Sénior A')
+                idx_cat = CATEGORIAS.index(cat_actual) if cat_actual in CATEGORIAS else 0
                 nueva_cat = col_m3.selectbox("Nueva categoría:", CATEGORIAS, index=idx_cat)
 
                 dia_pago = None
@@ -445,7 +365,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                         tarifas_fijas = [110000.0, 130000.0, 140000.0]
                         tarifa_manual = st.selectbox("Seleccionar Tarifa Fija:", tarifas_fijas, format_func=lambda x: f"${x:,.0f}")
                 elif nueva_sit == "Monto Personalizado":
-                    monto_custom = st.number_input("Monto personalizado ($):", min_value=0.0, value=float(mto_act), step=1000.0)
+                    monto_custom = st.number_input("Monto personalizado ($):", min_value=0.0, value=float(piloto_actual['monto']), step=1000.0)
 
                 if nueva_sit in ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado"]:
                     medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
@@ -464,7 +384,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                             nueva_sit, dia_pago, monto_custom, medio, destinatario, tarifa_manual
                         )
 
-                        log = f"MODIFICACIÓN PILOTO: {nom_act} -> {nuevo_nombre}"
+                        log = f"MODIFICACIÓN PILOTO: {piloto_actual['nombre']} -> {nuevo_nombre}"
                         st.session_state.historial.append(log)
 
                         st.session_state.pilotos[seleccion] = {
@@ -476,11 +396,165 @@ elif menu == "2. Modificar / Eliminar Piloto":
                             "destinatario": dest,
                             "situacion": sit_texto
                         }
-                        guardar_datos_disco()
                         st.success("Piloto actualizado con éxito.")
                         st.rerun()
 
 
 # ------------------------------------------
 # 3. BALANCE DE CAJA Y SEGURO
-# ---
+# ------------------------------------------
+elif menu == "3. Balance de Caja y Seguro":
+    st.header("📊 Estadísticas y Cierre de Caja")
+
+    total_pilotos = len(st.session_state.pilotos)
+
+    if total_pilotos == 0:
+        st.info("No hay pilotos registrados.")
+    else:
+        situaciones = [p["situacion"] for p in st.session_state.pilotos]
+        pagados = situaciones.count("Pagado")
+        solo_seg = situaciones.count("Solo Seguro")
+        personal = situaciones.count("Personalizado")
+        indistinto = situaciones.count("Indistinto/Nulo")
+        adeuda = situaciones.count("Adeuda")
+        gratis = situaciones.count("Gratis")
+
+        recaudacion_bruta = sum(p["monto"] for p in st.session_state.pilotos)
+        retencion_seguro = total_pilotos * 40000.0
+        neto_antes_gastos = recaudacion_bruta - retencion_seguro
+        total_gastos = sum(g["monto"] for g in st.session_state.gastos)
+        neto_final = neto_antes_gastos - total_gastos
+
+        porcentaje_seguro = (retencion_seguro / recaudacion_bruta * 100) if recaudacion_bruta > 0 else 0.0
+
+        st.subheader("Resumen de Pilotos")
+        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+        c1.metric("Tarifa Fija", pagados)
+        c2.metric("Solo Seguro", solo_seg)
+        c3.metric("Personalizado", personal)
+        c4.metric("Indistinto/Nulo", indistinto)
+        c5.metric("Adeudan", adeuda)
+        c6.metric("Gratis", gratis)
+        c7.metric("TOTAL PILOTOS", total_pilotos)
+
+        st.markdown("---")
+        st.subheader("Balance Financiero")
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("Recaudación Bruta", f"${recaudacion_bruta:,.2f}")
+        col_m2.metric("Retención Seguro ($40k/u)", f"${retencion_seguro:,.2f}")
+        col_m3.metric("Neto Antes de Gastos", f"${neto_antes_gastos:,.2f}")
+
+        col_m4, col_m5, col_m6 = st.columns(3)
+        col_m4.metric("Total Gastos Extra", f"${total_gastos:,.2f}")
+        col_m5.metric("FONDO NETO ORGANIZACIÓN", f"${neto_final:,.2f}")
+        col_m6.metric("Impacto del Seguro", f"{porcentaje_seguro:.2f}%")
+
+
+# ------------------------------------------
+# 4. CLASIFICACIÓN POR MONTOS
+# ------------------------------------------
+elif menu == "4. Clasificación por Montos":
+    st.header("📋 Clasificación y Auditoría de Pilotos")
+
+    if not st.session_state.pilotos:
+        st.info("No hay pilotos registrados.")
+    else:
+        grupos = [
+            ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, "Pagado"),
+            ("Tramo 2: Del 13 al 17 ($130.000)", 130000.0, "Pagado"),
+            ("Tramo 3: Del 18 al 19 ($140.000)", 140000.0, "Pagado"),
+            ("Solo Seguro ($40.000)", 40000.0, "Solo Seguro"),
+            ("Monto Personalizado", None, "Personalizado"),
+            ("Indistinto / Nulo ($0)", 0.0, "Indistinto/Nulo"),
+            ("Deudores ($0)", None, "Adeuda"),
+            ("Gratis ($0)", None, "Gratis"),
+        ]
+
+        for titulo, monto_grp, sit_grp in grupos:
+            with st.expander(f"Grupo: {titulo}", expanded=False):
+                filtrados = [
+                    p for p in st.session_state.pilotos
+                    if p["situacion"] == sit_grp and (monto_grp is None or p["monto"] == monto_grp)
+                ]
+                if filtrados:
+                    st.dataframe(filtrados, use_container_width=True)
+                else:
+                    st.write("Sin pilotos en este grupo.")
+
+
+# ------------------------------------------
+# 5. GASTOS EXTRA
+# ------------------------------------------
+elif menu == "5. Gastos Extra":
+    st.header("💸 Gastos Extra de la Organización")
+
+    tab1, tab2 = st.tabs(["Agregar Gasto", "Ver y Modificar Gastos"])
+
+    with tab1:
+        with st.form("form_gasto", clear_on_submit=True):
+            descripcion = st.text_input("Descripción del gasto:")
+            monto_gasto = st.number_input("Monto del gasto ($):", min_value=0.1, value=1000.0)
+            btn_gasto = st.form_submit_button("Registrar Gasto")
+
+            if btn_gasto:
+                if len(descripcion.strip()) < 2:
+                    st.error("La descripción debe tener al menos 2 caracteres.")
+                else:
+                    st.session_state.gastos.append({"descripcion": descripcion, "monto": monto_gasto})
+                    st.session_state.historial.append(f"GASTO AGREGADO: '{descripcion}' | ${monto_gasto}")
+                    st.success("Gasto registrado con éxito.")
+
+    with tab2:
+        if not st.session_state.gastos:
+            st.info("No hay gastos registrados.")
+        else:
+            st.table(st.session_state.gastos)
+            st.write(f"**TOTAL GASTOS EXTRA:** ${sum(g['monto'] for g in st.session_state.gastos):,.2f}")
+
+
+# ------------------------------------------
+# 6. HISTORIAL DE CAMBIOS
+# ------------------------------------------
+elif menu == "6. Historial de Cambios":
+    st.header("📜 Historial de Cambios en la Sesión")
+
+    if not st.session_state.historial:
+        st.info("No se registraron cambios en esta sesión.")
+    else:
+        for idx, item in enumerate(reversed(st.session_state.historial), 1):
+            st.text(f"{idx}. {item}")
+
+
+# ------------------------------------------
+# 7. EXPORTAR PDF
+# ------------------------------------------
+elif menu == "7. Exportar PDF":
+    st.header("📄 Exportar Reporte PDF")
+
+    if not st.session_state.pilotos:
+        st.info("No hay pilotos registrados para generar el PDF.")
+    else:
+        st.write("Selecciona el tipo de informe que deseas generar:")
+
+        opciones_pdf = [
+            "Completo", 
+            "Nombre completo con placa y categoría", 
+            "Nombre y datos de pago"
+        ]
+        opcion_pdf = st.radio("Opciones de Información del Reporte:", opciones_pdf)
+
+        st.markdown("---")
+
+        try:
+            pdf_bytes = generar_pdf(st.session_state.pilotos, opcion_pdf)
+            
+            st.download_button(
+                label="📥 Descargar Reporte PDF",
+                data=pdf_bytes,
+                file_name=f"reporte_pilotos_{opcion_pdf.lower().replace(' ', '_')}.pdf",
+                mime="application/pdf"
+            )
+        except Exception as e:
+            st.error(f"Error al generar el PDF: {e}")
+            ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, "Pagado"),
