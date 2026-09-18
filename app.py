@@ -71,10 +71,11 @@ def limpiar_texto(texto):
 
 def generar_pdf(pilotos, tipo_reporte):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
    
-    # Encabezado principal
+    # Encabezado
     pdf.cell(0, 10, limpiar_texto("Sistema de Caja - Enduro"), ln=True, align="C")
     pdf.set_font("Helvetica", "I", 11)
    
@@ -82,95 +83,171 @@ def generar_pdf(pilotos, tipo_reporte):
         pdf.cell(0, 8, limpiar_texto("Reporte Completo de Pilotos (Agrupado por Categoria)"), ln=True, align="C")
     elif tipo_reporte == "Nombre completo con placa y categoría":
         pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos: Nombre, Placa y Categoria"), ln=True, align="C")
+    elif tipo_reporte == "Nombre y datos de pago (por Categoria)":
+        pdf.cell(0, 8, limpiar_texto("Reporte de Datos de Pago (Agrupado por Categoria)"), ln=True, align="C")
     else:
-        pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos: Datos de Pago"), ln=True, align="C")
+        pdf.cell(0, 8, limpiar_texto("Reporte de Datos de Pago (Separado por Medio y Destinatario)"), ln=True, align="C")
        
     pdf.ln(4)
 
-    # Agrupar pilotos por categoría manteniendo el orden de ingreso
-    pilotos_por_cat = {}
-    for p in pilotos:
-        cat = p.get("categoria", "Sin Categoria")
-        if cat not in pilotos_por_cat:
-            pilotos_por_cat[cat] = []
-        pilotos_por_cat[cat].append(p)
+    # -------------------------------------------------------------
+    # CASO 1: AGRUPAR POR MEDIO Y DESTINATARIO (Efectivo / Transferencias)
+    # -------------------------------------------------------------
+    if tipo_reporte == "Nombre y datos de pago (por Medio/Destinatario)":
+        grupos_pago = {
+            "Efectivo": [],
+            "Transferencia - Mercedes": [],
+            "Transferencia - Marcelo": [],
+            "Transferencia - Lourdes": [],
+            "Otros / Sin Pago": []
+        }
 
-    # Configuración de anchos y columnas según tipo de reporte
-    if tipo_reporte == "Completo":
-        widths = [10, 45, 20, 30, 25, 20, 20, 20]
-        headers = ["#", "Nombre", "Placa", "Categoria", "Situacion", "Monto", "Medio", "Destino"]
-    elif tipo_reporte == "Nombre completo con placa y categoría":
-        widths = [15, 95, 35, 45]
-        headers = ["#", "Nombre Completo", "Placa / Dorsal", "Categoria"]
-    else: # Nombre y datos de pago
-        widths = [10, 55, 35, 30, 30, 30]
-        headers = ["#", "Nombre Completo", "Situacion", "Monto ($)", "Medio Pago", "Destinatario"]
+        for p in pilotos:
+            medio = p.get("medio", "Ninguno")
+            dest = p.get("destinatario", "Ninguno")
 
-    idx_global = 1
+            if medio == "Efectivo":
+                grupos_pago["Efectivo"].append(p)
+            elif medio == "Transferencia" and dest == "Mercedes":
+                grupos_pago["Transferencia - Mercedes"].append(p)
+            elif medio == "Transferencia" and dest == "Marcelo":
+                grupos_pago["Transferencia - Marcelo"].append(p)
+            elif medio == "Transferencia" and dest == "Lourdes":
+                grupos_pago["Transferencia - Lourdes"].append(p)
+            else:
+                grupos_pago["Otros / Sin Pago"].append(p)
 
-    # Generación agrupada
-    for cat, lista_pilotos in pilotos_por_cat.items():
-        # Banner de Categoría
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_fill_color(200, 215, 235)
-        pdf.cell(0, 7, limpiar_texto(f" CATEGORIA: {cat.upper()}"), border=1, ln=True, align="L", fill=True)
+        widths = [10, 50, 25, 35, 30, 30]
+        headers = ["#", "Nombre Completo", "Placa", "Categoria", "Situacion", "Monto ($)"]
 
-        # Encabezado de columnas para esta categoría
-        pdf.set_font("Helvetica", "B", 8)
-        pdf.set_fill_color(230, 230, 230)
-        for i, h in enumerate(headers):
-            pdf.cell(widths[i], 6, limpiar_texto(h), border=1, align="C", fill=True)
-        pdf.ln()
+        idx_global = 1
+        for nombre_grupo, lista in grupos_pago.items():
+            if not lista:
+                continue
 
-        # Filas de los pilotos
-        pdf.set_font("Helvetica", "", 8)
-        for p in lista_pilotos:
-            if tipo_reporte == "Completo":
+            # Banner de Grupo
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_fill_color(200, 215, 235)
+            pdf.cell(0, 7, limpiar_texto(f" GRUPO: {nombre_grupo.upper()} ({len(lista)} pilotos)"), border=1, ln=True, align="L", fill=True)
+
+            # Encabezados
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(230, 230, 230)
+            for i, h in enumerate(headers):
+                pdf.cell(widths[i], 6, limpiar_texto(h), border=1, align="C", fill=True)
+            pdf.ln()
+
+            # Filas
+            pdf.set_font("Helvetica", "", 8)
+            subtotal = 0.0
+            for p in lista:
                 row = [
                     str(idx_global),
                     p["nombre"],
                     p.get("placa", "-"),
                     p.get("categoria", "-"),
                     p["situacion"],
-                    f"${p['monto']:,.0f}",
-                    p["medio"],
-                    p["destinatario"]
+                    f"${p['monto']:,.0f}"
                 ]
-            elif tipo_reporte == "Nombre completo con placa y categoría":
-                row = [
-                    str(idx_global),
-                    p["nombre"],
-                    p.get("placa", "-"),
-                    p.get("categoria", "-")
-                ]
-            else: # Nombre y datos de pago
-                row = [
-                    str(idx_global),
-                    p["nombre"],
-                    p["situacion"],
-                    f"${p['monto']:,.0f}",
-                    p["medio"],
-                    p["destinatario"]
-                ]
+                subtotal += p["monto"]
 
-            for i, val in enumerate(row):
-                align = "C" if i in [0, 2] else "L"
-                if tipo_reporte == "Completo" and i == 5:
-                    align = "R"
-                elif tipo_reporte == "Nombre y datos de pago" and i == 3:
-                    align = "R"
-                pdf.cell(widths[i], 6, limpiar_texto(val), border=1, align=align)
+                for i, val in enumerate(row):
+                    align = "C" if i in [0, 2] else ("R" if i == 5 else "L")
+                    pdf.cell(widths[i], 6, limpiar_texto(val), border=1, align=align)
+                pdf.ln()
+                idx_global += 1
+
+            # Subtotal
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(sum(widths[:5]), 6, limpiar_texto(f"Subtotal {nombre_grupo}:"), border=1, align="R")
+            pdf.cell(widths[5], 6, limpiar_texto(f"${subtotal:,.0f}"), border=1, align="R")
             pdf.ln()
-            idx_global += 1
+            pdf.ln(3)
 
-        pdf.ln(3) # Espacio entre bloques de categorías
+    # -------------------------------------------------------------
+    # CASO 2: AGRUPAR POR CATEGORÍA (Mantiene orden de ingreso)
+    # -------------------------------------------------------------
+    else:
+        pilotos_por_cat = {}
+        for p in pilotos:
+            cat = p.get("categoria", "Sin Categoria")
+            if cat not in pilotos_por_cat:
+                pilotos_por_cat[cat] = []
+            pilotos_por_cat[cat].append(p)
+
+        if tipo_reporte == "Completo":
+            widths = [10, 45, 20, 30, 25, 20, 20, 20]
+            headers = ["#", "Nombre", "Placa", "Categoria", "Situacion", "Monto", "Medio", "Destino"]
+        elif tipo_reporte == "Nombre completo con placa y categoría":
+            widths = [15, 95, 35, 45]
+            headers = ["#", "Nombre Completo", "Placa / Dorsal", "Categoria"]
+        else: # Nombre y datos de pago (por Categoria)
+            widths = [10, 55, 35, 30, 30, 30]
+            headers = ["#", "Nombre Completo", "Situacion", "Monto ($)", "Medio Pago", "Destinatario"]
+
+        idx_global = 1
+        for cat, lista_pilotos in pilotos_por_cat.items():
+            # Banner de Categoría
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_fill_color(200, 215, 235)
+            pdf.cell(0, 7, limpiar_texto(f" CATEGORIA: {cat.upper()} ({len(lista_pilotos)} pilotos)"), border=1, ln=True, align="L", fill=True)
+
+            # Encabezados
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(230, 230, 230)
+            for i, h in enumerate(headers):
+                pdf.cell(widths[i], 6, limpiar_texto(h), border=1, align="C", fill=True)
+            pdf.ln()
+
+            # Filas
+            pdf.set_font("Helvetica", "", 8)
+            for p in lista_pilotos:
+                if tipo_reporte == "Completo":
+                    row = [
+                        str(idx_global),
+                        p["nombre"],
+                        p.get("placa", "-"),
+                        p.get("categoria", "-"),
+                        p["situacion"],
+                        f"${p['monto']:,.0f}",
+                        p["medio"],
+                        p["destinatario"]
+                    ]
+                elif tipo_reporte == "Nombre completo con placa y categoría":
+                    row = [
+                        str(idx_global),
+                        p["nombre"],
+                        p.get("placa", "-"),
+                        p.get("categoria", "-")
+                    ]
+                else:
+                    row = [
+                        str(idx_global),
+                        p["nombre"],
+                        p["situacion"],
+                        f"${p['monto']:,.0f}",
+                        p["medio"],
+                        p["destinatario"]
+                    ]
+
+                for i, val in enumerate(row):
+                    align = "C" if i in [0, 2] else "L"
+                    if tipo_reporte == "Completo" and i == 5:
+                        align = "R"
+                    elif tipo_reporte == "Nombre y datos de pago (por Categoria)" and i == 3:
+                        align = "R"
+                    pdf.cell(widths[i], 6, limpiar_texto(val), border=1, align=align)
+                pdf.ln()
+                idx_global += 1
+
+            pdf.ln(3)
 
     output = pdf.output()
     if isinstance(output, str):
         return output.encode('latin1')
     elif isinstance(output, bytearray):
         return bytes(output)
-    return output
+    return bytes(output)
 
 
 # ==========================================
@@ -387,89 +464,5 @@ elif menu == "3. Balance de Caja y Seguro":
         st.subheader("Resumen de Pilotos")
         c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
         c1.metric("Tarifa Fija", pagados)
-        c2.metric("Solo Seguro", solo_seg)
-        c3.metric("Personalizado", personal)
-        c4.metric("Indistinto/Nulo", indistinto)
-        c5.metric("Adeudan", adeuda)
-        c6.metric("Gratis", gratis)
-        c7.metric("TOTAL PILOTOS", total_pilotos)
+        c2.metric("Solo Seguro", solo_s
 
-        st.markdown("---")
-        st.subheader("Balance Financiero")
-
-        col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("Recaudación Bruta", f"${recaudacion_bruta:,.2f}")
-        col_m2.metric("Retención Seguro ($40k/u)", f"${retencion_seguro:,.2f}")
-        col_m3.metric("Neto Antes de Gastos", f"${neto_antes_gastos:,.2f}")
-
-        col_m4, col_m5, col_m6 = st.columns(3)
-        col_m4.metric("Total Gastos Extra", f"${total_gastos:,.2f}")
-        col_m5.metric("FONDO NETO ORGANIZACIÓN", f"${neto_final:,.2f}")
-        col_m6.metric("Impacto del Seguro", f"{porcentaje_seguro:.2f}%")
-
-
-# ------------------------------------------
-# 4. CLASIFICACIÓN POR MONTOS
-# ------------------------------------------
-elif menu == "4. Clasificación por Montos":
-    st.header("📋 Clasificación y Auditoría de Pilotos")
-
-    if not st.session_state.pilotos:
-        st.info("No hay pilotos registrados.")
-    else:
-        grupos = [
-            ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, "Pagado"),
-            ("Tramo 2: Del 13 al 17 ($130.000)", 130000.0, "Pagado"),
-            ("Tramo 3: Del 18 al 19 ($140.000)", 140000.0, "Pagado"),
-            ("Solo Seguro ($40.000)", 40000.0, "Solo Seguro"),
-            ("Monto Personalizado", None, "Personalizado"),
-            ("Indistinto / Nulo ($0)", 0.0, "Indistinto/Nulo"),
-            ("Deudores ($0)", None, "Adeuda"),
-            ("Gratis ($0)", None, "Gratis"),
-        ]
-
-        for titulo, monto_grp, sit_grp in grupos:
-            with st.expander(f"Grupo: {titulo}", expanded=False):
-                filtrados = [
-                    p for p in st.session_state.pilotos
-                    if p["situacion"] == sit_grp and (monto_grp is None or p["monto"] == monto_grp)
-                ]
-                if filtrados:
-                    st.dataframe(filtrados, use_container_width=True)
-                else:
-                    st.write("Sin pilotos en este grupo.")
-
-
-# ------------------------------------------
-# 5. GASTOS EXTRA
-# ------------------------------------------
-elif menu == "5. Gastos Extra":
-    st.header("💸 Gastos Extra de la Organización")
-
-    tab1, tab2 = st.tabs(["Agregar Gasto", "Ver y Modificar Gastos"])
-
-    with tab1:
-        with st.form("form_gasto", clear_on_submit=True):
-            descripcion = st.text_input("Descripción del gasto:")
-            monto_gasto = st.number_input("Monto del gasto ($):", min_value=0.1, value=1000.0)
-            btn_gasto = st.form_submit_button("Registrar Gasto")
-
-            if btn_gasto:
-                if len(descripcion.strip()) < 2:
-                    st.error("La descripción debe tener al menos 2 caracteres.")
-                else:
-                    st.session_state.gastos.append({"descripcion": descripcion, "monto": monto_gasto})
-                    st.session_state.historial.append(f"GASTO AGREGADO: '{descripcion}' | ${monto_gasto}")
-                    st.success("Gasto registrado con éxito.")
-
-    with tab2:
-        if not st.session_state.gastos:
-            st.info("No hay gastos registrados.")
-        else:
-            st.table(st.session_state.gastos)
-            st.write(f"**TOTAL GASTOS EXTRA:** ${sum(g['monto'] for g in st.session_state.gastos):,.2f}")
-
-
-# ------------------------------------------
-# 6. HISTORIAL DE CAMBIOS
-# -----
