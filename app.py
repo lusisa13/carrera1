@@ -171,7 +171,7 @@ if menu == "1. Registrar Piloto":
         with col_n3:
             categoria = st.selectbox(
                 "Categoría:",
-                ["Sénior", "Júnior", "Master A", "Master B", "Promocional", "Principiantes", "Otra"]
+                ["Sénior A", "Senior B" , "Júnior A", "Junior B" , "Master A", "Master B", "Master C" , "Master D" , "Master Principiantes" , "Master Leyenda" ,  "Principiantes A1", "Principiantes A2", "Principiantes B" , "Sub17" , "Infantiles A" , "Infantiles B" , "Mini" , "Damas" , "Otra"]
             )
 
         situacion_op = st.selectbox(
