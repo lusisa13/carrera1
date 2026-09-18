@@ -1,8 +1,14 @@
 import streamlit as st
+import json
+import os
+import base64
 from fpdf import FPDF
 
 # Configuración de la página
 st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏎️", layout="wide")
+
+# Archivo de persistencia local para no perder datos al refrescar
+DATA_FILE = "datos_caja.json"
 
 # Lista general de categorías
 CATEGORIAS = [
@@ -13,19 +19,38 @@ CATEGORIAS = [
 ]
 
 # ==========================================
-# INICIALIZACIÓN DEL ESTADO (SESSION STATE)
+# GESTIÓN DE PERSISTENCIA (GUARDADO Y CARGA)
 # ==========================================
-if "pilotos" not in st.session_state:
-    st.session_state.pilotos = []
+def cargar_datos_disco():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"pilotos": [], "gastos": [], "historial": []}
 
-if "gastos" not in st.session_state:
-    st.session_state.gastos = []
+def guardar_datos_disco():
+    data = {
+        "pilotos": st.session_state.pilotos,
+        "gastos": st.session_state.gastos,
+        "historial": st.session_state.historial
+    }
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-if "historial" not in st.session_state:
-    st.session_state.historial = []
+# Inicialización de Session State desde archivo local
+if "datos_inicializados" not in st.session_state:
+    datos_guardados = cargar_datos_disco()
+    st.session_state.pilotos = datos_guardados.get("pilotos", [])
+    st.session_state.gastos = datos_guardados.get("gastos", [])
+    st.session_state.historial = datos_guardados.get("historial", [])
+    st.session_state.datos_inicializados = True
 
 
-# Funciones auxiliares
+# ==========================================
+# FUNCIONES AUXILIARES
+# ==========================================
 def resolver_situacion(opcion_sit, dia_mes=None, monto_custom=0.0, medio_op="Efectivo", dest_op="Mercedes", tarifa_manual=110000.0):
     if opcion_sit == "Pagó Tarifa":
         if dia_mes is not None:
@@ -91,7 +116,7 @@ def generar_pdf(pilotos, tipo_reporte):
     pdf.ln(4)
 
     # -------------------------------------------------------------
-    # CASO 1: AGRUPAR POR MEDIO Y DESTINATARIO (Efectivo / Transferencias)
+    # CASO 1: SEPARADO POR MEDIO Y DESTINATARIO (Efectivo / Transferencias)
     # -------------------------------------------------------------
     if tipo_reporte == "Nombre y datos de pago (por Medio/Destinatario)":
         grupos_pago = {
@@ -125,12 +150,12 @@ def generar_pdf(pilotos, tipo_reporte):
             if not lista:
                 continue
 
-            # Banner de Grupo
+            # Encabezado del grupo de pago
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_fill_color(200, 215, 235)
             pdf.cell(0, 7, limpiar_texto(f" GRUPO: {nombre_grupo.upper()} ({len(lista)} pilotos)"), border=1, ln=True, align="L", fill=True)
 
-            # Encabezados
+            # Encabezados de tabla
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_fill_color(230, 230, 230)
             for i, h in enumerate(headers):
@@ -157,7 +182,7 @@ def generar_pdf(pilotos, tipo_reporte):
                 pdf.ln()
                 idx_global += 1
 
-            # Subtotal
+            # Subtotal del grupo
             pdf.set_font("Helvetica", "B", 8)
             pdf.cell(sum(widths[:5]), 6, limpiar_texto(f"Subtotal {nombre_grupo}:"), border=1, align="R")
             pdf.cell(widths[5], 6, limpiar_texto(f"${subtotal:,.0f}"), border=1, align="R")
@@ -165,7 +190,7 @@ def generar_pdf(pilotos, tipo_reporte):
             pdf.ln(3)
 
     # -------------------------------------------------------------
-    # CASO 2: AGRUPAR POR CATEGORÍA (Mantiene orden de ingreso)
+    # CASO 2: AGRUPADO POR CATEGORÍA (Conserva orden de ingreso)
     # -------------------------------------------------------------
     else:
         pilotos_por_cat = {}
@@ -181,25 +206,25 @@ def generar_pdf(pilotos, tipo_reporte):
         elif tipo_reporte == "Nombre completo con placa y categoría":
             widths = [15, 95, 35, 45]
             headers = ["#", "Nombre Completo", "Placa / Dorsal", "Categoria"]
-        else: # Nombre y datos de pago (por Categoria)
+        else: # Nombre y datos de pago (por Categoría)
             widths = [10, 55, 35, 30, 30, 30]
             headers = ["#", "Nombre Completo", "Situacion", "Monto ($)", "Medio Pago", "Destinatario"]
 
         idx_global = 1
         for cat, lista_pilotos in pilotos_por_cat.items():
-            # Banner de Categoría
+            # Encabezado de Categoría
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_fill_color(200, 215, 235)
             pdf.cell(0, 7, limpiar_texto(f" CATEGORIA: {cat.upper()} ({len(lista_pilotos)} pilotos)"), border=1, ln=True, align="L", fill=True)
 
-            # Encabezados
+            # Encabezados de tabla
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_fill_color(230, 230, 230)
             for i, h in enumerate(headers):
                 pdf.cell(widths[i], 6, limpiar_texto(h), border=1, align="C", fill=True)
             pdf.ln()
 
-            # Filas
+            # Filas ordenadas según ingreso
             pdf.set_font("Helvetica", "", 8)
             for p in lista_pilotos:
                 if tipo_reporte == "Completo":
@@ -242,12 +267,23 @@ def generar_pdf(pilotos, tipo_reporte):
 
             pdf.ln(3)
 
-    output = pdf.output()
-    if isinstance(output, str):
-        return output.encode('latin1')
-    elif isinstance(output, bytearray):
-        return bytes(output)
-    return bytes(output)
+    # Exportación limpia de bytes
+    try:
+        res = pdf.output()
+        if isinstance(res, (bytes, bytearray)):
+            return bytes(res)
+        elif isinstance(res, str):
+            return res.encode('latin-1')
+    except Exception:
+        pass
+
+    try:
+        res_str = pdf.output(dest='S')
+        if isinstance(res_str, str):
+            return res_str.encode('latin-1')
+        return bytes(res_str)
+    except Exception:
+        return bytes(pdf.output())
 
 
 # ==========================================
@@ -263,7 +299,7 @@ opciones_menu = [
     "4. Clasificación por Montos",
     "5. Gastos Extra",
     "6. Historial de Cambios",
-    "7. Exportar PDF"
+    "7. Exportar / Ver PDF"
 ]
 menu = st.sidebar.radio("Menú Principal", opciones_menu)
 
@@ -338,6 +374,7 @@ if menu == "1. Registrar Piloto":
 
                 log = f"ALTA PILOTO: {nombre} | Placa: {placa} | Cat: {categoria} | Situación: {sit_texto} | Monto: ${monto}"
                 st.session_state.historial.append(log)
+                guardar_datos_disco() # Guardado en disco local
                 st.success(f"¡Piloto {nombre} registrado con éxito!")
 
 
@@ -371,6 +408,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 p_borrado = st.session_state.pilotos.pop(seleccion)
                 log = f"BAJA PILOTO: {p_borrado['nombre']} | Placa: {p_borrado.get('placa','-')}"
                 st.session_state.historial.append(log)
+                guardar_datos_disco() # Guardado en disco local
                 st.success("Piloto eliminado correctamente.")
                 st.rerun()
 
@@ -429,40 +467,4 @@ elif menu == "2. Modificar / Eliminar Piloto":
                             "medio": medio_pago,
                             "destinatario": dest,
                             "situacion": sit_texto
-                        }
-                        st.success("Piloto actualizado con éxito.")
-                        st.rerun()
-
-
-# ------------------------------------------
-# 3. BALANCE DE CAJA Y SEGURO
-# ------------------------------------------
-elif menu == "3. Balance de Caja y Seguro":
-    st.header("📊 Estadísticas y Cierre de Caja")
-
-    total_pilotos = len(st.session_state.pilotos)
-
-    if total_pilotos == 0:
-        st.info("No hay pilotos registrados.")
-    else:
-        situaciones = [p["situacion"] for p in st.session_state.pilotos]
-        pagados = situaciones.count("Pagado")
-        solo_seg = situaciones.count("Solo Seguro")
-        personal = situaciones.count("Personalizado")
-        indistinto = situaciones.count("Indistinto/Nulo")
-        adeuda = situaciones.count("Adeuda")
-        gratis = situaciones.count("Gratis")
-
-        recaudacion_bruta = sum(p["monto"] for p in st.session_state.pilotos)
-        retencion_seguro = total_pilotos * 40000.0
-        neto_antes_gastos = recaudacion_bruta - retencion_seguro
-        total_gastos = sum(g["monto"] for g in st.session_state.gastos)
-        neto_final = neto_antes_gastos - total_gastos
-
-        porcentaje_seguro = (retencion_seguro / recaudacion_bruta * 100) if recaudacion_bruta > 0 else 0.0
-
-        st.subheader("Resumen de Pilotos")
-        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
-        c1.metric("Tarifa Fija", pagados)
-        c2.metric("Solo Seguro", solo_s)
-
+  
