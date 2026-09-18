@@ -1,4 +1,5 @@
 import streamlit as st
+
 # Configuración de la página
 st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏍️", layout="wide")
 
@@ -7,32 +8,6 @@ st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏍️", l
 # ==========================================
 if "pilotos" not in st.session_state:
     st.session_state.pilotos = []
-    # Pre-cargamos los 110 pilotos de muestra igual que en tu script original
-    for i in range(1, 111):
-        nombre = f"Piloto {i}"
-        if i % 3 == 0:
-            monto = 80000.0
-            situacion = "Pagado"
-            medio = "Efectivo"
-            dest = "Mercedes"
-        elif i % 3 == 1:
-            monto = 0.0
-            situacion = "Adeuda"
-            medio = "Ninguno"
-            dest = "Ninguno"
-        else:
-            monto = 0.0
-            situacion = "Gratis"
-            medio = "Ninguno"
-            dest = "Ninguno"
-
-        st.session_state.pilotos.append({
-            "nombre": nombre,
-            "monto": monto,
-            "medio": medio,
-            "destinatario": dest,
-            "situacion": situacion
-        })
 
 if "gastos" not in st.session_state:
     st.session_state.gastos = []
