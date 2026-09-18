@@ -1,7 +1,16 @@
 import streamlit as st
 from fpdf import FPDF
+
 # Configuración de la página
 st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏍️", layout="wide")
+
+# Lista general de categorías
+CATEGORIAS = [
+    "Sénior A", "Senior B", "Júnior A", "Junior B", "Master A", "Master B", 
+    "Master C", "Master D", "Master Principiantes", "Master Leyenda", 
+    "Principiantes A1", "Principiantes A2", "Principiantes B", "Sub17", 
+    "Infantiles A", "Infantiles B", "Mini", "Damas", "Otra"
+]
 
 # ==========================================
 # INICIALIZACIÓN DEL ESTADO (SESSION STATE)
@@ -58,18 +67,18 @@ def generar_pdf(pilotos, tipo_reporte):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
-    
+   
     # Encabezado
     pdf.cell(0, 10, limpiar_texto("Sistema de Caja - Enduro"), ln=True, align="C")
     pdf.set_font("Helvetica", "I", 11)
-    
+   
     if tipo_reporte == "Completo":
         pdf.cell(0, 8, limpiar_texto("Reporte Completo de Pilotos"), ln=True, align="C")
     elif tipo_reporte == "Nombre completo con placa y categoría":
         pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos: Nombre, Placa y Categoria"), ln=True, align="C")
     else:
         pdf.cell(0, 8, limpiar_texto("Reporte de Pilotos: Datos de Pago"), ln=True, align="C")
-        
+       
     pdf.ln(5)
 
     # Configuración de columnas
@@ -169,10 +178,7 @@ if menu == "1. Registrar Piloto":
         with col_n2:
             placa = st.text_input("Placa / Dorsal:", value="")
         with col_n3:
-            categoria = st.selectbox(
-                "Categoría:",
-                ["Sénior A", "Senior B" , "Júnior A", "Junior B" , "Master A", "Master B", "Master C" , "Master D" , "Master Principiantes" , "Master Leyenda" ,  "Principiantes A1", "Principiantes A2", "Principiantes B" , "Sub17" , "Infantiles A" , "Infantiles B" , "Mini" , "Damas" , "Otra"]
-            )
+            categoria = st.selectbox("Categoría:", CATEGORIAS)
 
         situacion_op = st.selectbox(
             "Situación del piloto:",
@@ -181,8 +187,8 @@ if menu == "1. Registrar Piloto":
 
         col1, col2 = st.columns(2)
         with col1:
-            dia_pago = st.number_input("Día del mes en que abona (1-31):", min_value=1, max_value=31, value=7)
-            monto_personalizado = st.number_input("Monto personalizado ($):", min_value=0.0, value=0.0)
+            dia_pago = st.number_input("Día del mes en que abona (Aplica para 'Pagó Tarifa'):", min_value=1, max_value=31, value=7)
+            monto_personalizado = st.number_input("Monto personalizado ($) (Aplica para 'Monto Personalizado'):", min_value=0.0, value=0.0)
 
         with col2:
             medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
@@ -251,11 +257,10 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 col_m1, col_m2, col_m3 = st.columns([2, 1, 1])
                 nuevo_nombre = col_m1.text_input("Nuevo nombre:", value=piloto_actual['nombre'])
                 nueva_placa = col_m2.text_input("Nueva placa:", value=piloto_actual.get('placa', ''))
-                
-                cat_actual = piloto_actual.get('categoria', 'Sénior')
-                cats = ["Sénior", "Júnior", "Master A", "Master B", "Promocional", "Principiantes", "Otra"]
-                idx_cat = cats.index(cat_actual) if cat_actual in cats else 0
-                nueva_cat = col_m3.selectbox("Nueva categoría:", cats, index=idx_cat)
+               
+                cat_actual = piloto_actual.get('categoria', 'Sénior A')
+                idx_cat = CATEGORIAS.index(cat_actual) if cat_actual in CATEGORIAS else 0
+                nueva_cat = col_m3.selectbox("Nueva categoría:", CATEGORIAS, index=idx_cat)
 
                 nueva_sit = st.selectbox(
                     "Nueva situación:",
@@ -351,10 +356,11 @@ elif menu == "4. Clasificación por Montos":
         st.info("No hay pilotos registrados.")
     else:
         grupos = [
-            ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, None),
-            ("Tramo 2: Del 13 al 17 ($130.000)", 130000.0, None),
-            ("Tramo 3: Del 18 al 19 ($140.000)", 140000.0, None),
-            ("Solo Seguro ($40.000)", 40000.0, None),
+            ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, "Pagado"),
+            ("Tramo 2: Del 13 al 17 ($130.000)", 130000.0, "Pagado"),
+            ("Tramo 3: Del 18 al 19 ($140.000)", 140000.0, "Pagado"),
+            ("Solo Seguro ($40.000)", 40000.0, "Solo Seguro"),
+            ("Monto Personalizado", None, "Personalizado"),
             ("Deudores ($0)", None, "Adeuda"),
             ("Gratis ($0)", None, "Gratis"),
         ]
@@ -363,8 +369,7 @@ elif menu == "4. Clasificación por Montos":
             with st.expander(f"Grupo: {titulo}", expanded=False):
                 filtrados = [
                     p for p in st.session_state.pilotos
-                    if (monto_grp is not None and p["monto"] == monto_grp) or
-                       (sit_grp is not None and p["situacion"] == sit_grp)
+                    if p["situacion"] == sit_grp and (monto_grp is None or p["monto"] == monto_grp)
                 ]
                 if filtrados:
                     st.dataframe(filtrados, use_container_width=True)
