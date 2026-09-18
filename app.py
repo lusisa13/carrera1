@@ -26,14 +26,17 @@ if "historial" not in st.session_state:
 
 
 # Funciones auxiliares
-def resolver_situacion(opcion_sit, dia_mes=1, monto_custom=0.0, medio_op="Efectivo", dest_op="Mercedes"):
+def resolver_situacion(opcion_sit, dia_mes=None, monto_custom=0.0, medio_op="Efectivo", dest_op="Mercedes", tarifa_manual=110000.0):
     if opcion_sit == "Pagó Tarifa":
-        if dia_mes <= 12:
-            monto = 110000.0
-        elif dia_mes <= 17:
-            monto = 130000.0
+        if dia_mes is not None:
+            if dia_mes <= 12:
+                monto = 110000.0
+            elif dia_mes <= 17:
+                monto = 130000.0
+            else:
+                monto = 140000.0
         else:
-            monto = 140000.0
+            monto = float(tarifa_manual)
         return monto, medio_op, dest_op, "Pagado"
 
     elif opcion_sit == "Solo Seguro":
@@ -187,8 +190,19 @@ if menu == "1. Registrar Piloto":
 
         col1, col2 = st.columns(2)
         with col1:
-            dia_pago = st.number_input("Día del mes en que abona (Aplica para 'Pagó Tarifa'):", min_value=1, max_value=31, value=7)
-            monto_personalizado = st.number_input("Monto personalizado ($) (Aplica para 'Monto Personalizado'):", min_value=0.0, value=0.0)
+            usar_fecha = st.checkbox("Ingresar día para calcular tarifa según la fecha", value=False)
+            if usar_fecha:
+                dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
+                tarifa_manual = 110000.0
+            else:
+                dia_pago = None
+                tarifa_manual = st.selectbox(
+                    "Seleccionar Tarifa Fija (si no usa fecha):",
+                    [110000.0, 130000.0, 140000.0],
+                    format_func=lambda x: f"${x:,.0f}"
+                )
+
+            monto_personalizado = st.number_input("Monto personalizado ($) (Aplica si eligió 'Monto Personalizado'):", min_value=0.0, value=0.0)
 
         with col2:
             medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
@@ -201,7 +215,7 @@ if menu == "1. Registrar Piloto":
                 st.error("Error: El nombre debe tener al menos 3 caracteres.")
             else:
                 monto, medio_pago, dest, sit_texto = resolver_situacion(
-                    situacion_op, dia_pago, monto_personalizado, medio, destinatario
+                    situacion_op, dia_pago, monto_personalizado, medio, destinatario, tarifa_manual
                 )
 
                 st.session_state.pilotos.append({
@@ -266,7 +280,19 @@ elif menu == "2. Modificar / Eliminar Piloto":
                     "Nueva situación:",
                     ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado", "Adeuda", "Gratis"]
                 )
-                dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
+
+                usar_fecha_mod = st.checkbox("Ingresar día para calcular tarifa según la fecha", value=False)
+                if usar_fecha_mod:
+                    dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
+                    tarifa_manual = 110000.0
+                else:
+                    dia_pago = None
+                    tarifa_manual = st.selectbox(
+                        "Seleccionar Tarifa Fija (si no usa fecha):",
+                        [110000.0, 130000.0, 140000.0],
+                        format_func=lambda x: f"${x:,.0f}"
+                    )
+
                 monto_custom = st.number_input("Monto personalizado ($):", min_value=0.0, value=piloto_actual['monto'])
                 medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
                 destinatario = st.selectbox("Destinatario:", ["Mercedes", "Marcelo", "Lourdes"])
@@ -278,7 +304,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                         st.error("El nombre debe tener al menos 3 caracteres.")
                     else:
                         monto, medio_pago, dest, sit_texto = resolver_situacion(
-                            nueva_sit, dia_pago, monto_custom, medio, destinatario
+                            nueva_sit, dia_pago, monto_custom, medio, destinatario, tarifa_manual
                         )
 
                         log = f"MODIFICACIÓN PILOTO: {piloto_actual['nombre']} -> {nuevo_nombre}"
