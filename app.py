@@ -464,5 +464,5 @@ elif menu == "3. Balance de Caja y Seguro":
         st.subheader("Resumen de Pilotos")
         c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
         c1.metric("Tarifa Fija", pagados)
-        c2.metric("Solo Seguro", solo_s
+        c2.metric("Solo Seguro", solo_s)
 
