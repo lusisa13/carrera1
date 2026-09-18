@@ -45,6 +45,9 @@ def resolver_situacion(opcion_sit, dia_mes=None, monto_custom=0.0, medio_op="Efe
     elif opcion_sit == "Monto Personalizado":
         return float(monto_custom), medio_op, dest_op, "Personalizado"
 
+    elif opcion_sit == "Indistinto / Nulo":
+        return 0.0, "Ninguno", "Ninguno", "Indistinto/Nulo"
+
     elif opcion_sit == "Adeuda":
         return 0.0, "Ninguno", "Ninguno", "Adeuda"
 
@@ -174,6 +177,12 @@ menu = st.sidebar.radio(
 if menu == "1. Registrar Piloto":
     st.header("📝 Registrar Nuevo Piloto")
 
+    situacion_op = st.selectbox(
+        "Seleccione la Situación del Piloto:",
+        ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado", "Indistinto / Nulo", "Adeuda", "Gratis"],
+        key="reg_situacion_op"
+    )
+
     with st.form("form_registro", clear_on_submit=True):
         col_n1, col_n2, col_n3 = st.columns([2, 1, 1])
         with col_n1:
@@ -183,30 +192,40 @@ if menu == "1. Registrar Piloto":
         with col_n3:
             categoria = st.selectbox("Categoría:", CATEGORIAS)
 
-        situacion_op = st.selectbox(
-            "Situación del piloto:",
-            ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado", "Adeuda", "Gratis"]
-        )
-
         col1, col2 = st.columns(2)
-        with col1:
-            usar_fecha = st.checkbox("Ingresar día para calcular tarifa según la fecha", value=False)
-            if usar_fecha:
-                dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
-                tarifa_manual = 110000.0
-            else:
-                dia_pago = None
-                tarifa_manual = st.selectbox(
-                    "Seleccionar Tarifa Fija (si no usa fecha):",
-                    [110000.0, 130000.0, 140000.0],
-                    format_func=lambda x: f"${x:,.0f}"
-                )
+        
+        # Variables por defecto
+        dia_pago = None
+        tarifa_manual = 110000.0
+        monto_personalizado = 0.0
 
-            monto_personalizado = st.number_input("Monto personalizado ($) (Aplica si eligió 'Monto Personalizado'):", min_value=0.0, value=0.0)
+        with col1:
+            if situacion_op == "Pagó Tarifa":
+                usar_fecha = st.checkbox("Ingresar día para calcular tarifa según la fecha", value=False)
+                if usar_fecha:
+                    dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
+                else:
+                    tarifa_manual = st.selectbox(
+                        "Seleccionar Tarifa Fija:",
+                        [110000.0, 130000.0, 140000.0],
+                        format_func=lambda x: f"${x:,.0f}"
+                    )
+            elif situacion_op == "Monto Personalizado":
+                monto_personalizado = st.number_input("Ingrese el Monto Personalizado ($):", min_value=0.0, value=0.0, step=1000.0)
+            elif situacion_op == "Solo Seguro":
+                st.info("Monto fijo retenido por seguro: **$40.000**")
+            elif situacion_op == "Indistinto / Nulo":
+                st.info("Monto sin especificar o nulo: **$0**")
+            else:
+                st.info("Monto asignado: **$0**")
 
         with col2:
-            medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
-            destinatario = st.selectbox("Destinatario del pago:", ["Mercedes", "Marcelo", "Lourdes"])
+            if situacion_op in ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado"]:
+                medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
+                destinatario = st.selectbox("Destinatario del pago:", ["Mercedes", "Marcelo", "Lourdes"])
+            else:
+                medio = "Ninguno"
+                destinatario = "Ninguno"
 
         enviado = st.form_submit_button("Registrar Piloto")
 
@@ -267,6 +286,12 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 st.rerun()
 
         else:
+            nueva_sit = st.selectbox(
+                "Nueva situación:",
+                ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado", "Indistinto / Nulo", "Adeuda", "Gratis"],
+                key="mod_situacion_op"
+            )
+
             with st.form("form_modificar"):
                 col_m1, col_m2, col_m3 = st.columns([2, 1, 1])
                 nuevo_nombre = col_m1.text_input("Nuevo nombre:", value=piloto_actual['nombre'])
@@ -276,26 +301,29 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 idx_cat = CATEGORIAS.index(cat_actual) if cat_actual in CATEGORIAS else 0
                 nueva_cat = col_m3.selectbox("Nueva categoría:", CATEGORIAS, index=idx_cat)
 
-                nueva_sit = st.selectbox(
-                    "Nueva situación:",
-                    ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado", "Adeuda", "Gratis"]
-                )
+                dia_pago = None
+                tarifa_manual = 110000.0
+                monto_custom = 0.0
 
-                usar_fecha_mod = st.checkbox("Ingresar día para calcular tarifa según la fecha", value=False)
-                if usar_fecha_mod:
-                    dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
-                    tarifa_manual = 110000.0
+                if nueva_sit == "Pagó Tarifa":
+                    usar_fecha_mod = st.checkbox("Ingresar día para calcular tarifa según la fecha", value=False)
+                    if usar_fecha_mod:
+                        dia_pago = st.number_input("Día del mes (1-31):", min_value=1, max_value=31, value=7)
+                    else:
+                        tarifa_manual = st.selectbox(
+                            "Seleccionar Tarifa Fija:",
+                            [110000.0, 130000.0, 140000.0],
+                            format_func=lambda x: f"${x:,.0f}"
+                        )
+                elif nueva_sit == "Monto Personalizado":
+                    monto_custom = st.number_input("Monto personalizado ($):", min_value=0.0, value=piloto_actual['monto'], step=1000.0)
+
+                if nueva_sit in ["Pagó Tarifa", "Solo Seguro", "Monto Personalizado"]:
+                    medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
+                    destinatario = st.selectbox("Destinatario:", ["Mercedes", "Marcelo", "Lourdes"])
                 else:
-                    dia_pago = None
-                    tarifa_manual = st.selectbox(
-                        "Seleccionar Tarifa Fija (si no usa fecha):",
-                        [110000.0, 130000.0, 140000.0],
-                        format_func=lambda x: f"${x:,.0f}"
-                    )
-
-                monto_custom = st.number_input("Monto personalizado ($):", min_value=0.0, value=piloto_actual['monto'])
-                medio = st.selectbox("Medio de pago:", ["Efectivo", "Transferencia"])
-                destinatario = st.selectbox("Destinatario:", ["Mercedes", "Marcelo", "Lourdes"])
+                    medio = "Ninguno"
+                    destinatario = "Ninguno"
 
                 guardar = st.form_submit_button("Guardar Cambios")
 
@@ -338,6 +366,7 @@ elif menu == "3. Balance de Caja y Seguro":
         pagados = situaciones.count("Pagado")
         solo_seg = situaciones.count("Solo Seguro")
         personal = situaciones.count("Personalizado")
+        indistinto = situaciones.count("Indistinto/Nulo")
         adeuda = situaciones.count("Adeuda")
         gratis = situaciones.count("Gratis")
 
@@ -350,13 +379,14 @@ elif menu == "3. Balance de Caja y Seguro":
         porcentaje_seguro = (retencion_seguro / recaudacion_bruta * 100) if recaudacion_bruta > 0 else 0.0
 
         st.subheader("Resumen de Pilotos")
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
         c1.metric("Tarifa Fija", pagados)
         c2.metric("Solo Seguro", solo_seg)
         c3.metric("Personalizado", personal)
-        c4.metric("Adeudan", adeuda)
-        c5.metric("Gratis", gratis)
-        c6.metric("TOTAL PILOTOS", total_pilotos)
+        c4.metric("Indistinto/Nulo", indistinto)
+        c5.metric("Adeudan", adeuda)
+        c6.metric("Gratis", gratis)
+        c7.metric("TOTAL PILOTOS", total_pilotos)
 
         st.markdown("---")
         st.subheader("Balance Financiero")
@@ -387,6 +417,7 @@ elif menu == "4. Clasificación por Montos":
             ("Tramo 3: Del 18 al 19 ($140.000)", 140000.0, "Pagado"),
             ("Solo Seguro ($40.000)", 40000.0, "Solo Seguro"),
             ("Monto Personalizado", None, "Personalizado"),
+            ("Indistinto / Nulo ($0)", 0.0, "Indistinto/Nulo"),
             ("Deudores ($0)", None, "Adeuda"),
             ("Gratis ($0)", None, "Gratis"),
         ]
@@ -460,20 +491,4 @@ elif menu == "7. Exportar PDF":
         opcion_pdf = st.radio(
             "Opciones de Información del Reporte:",
             [
-                "Completo",
-                "Nombre completo con placa y categoría",
-                "Nombre y datos de pago"
-            ]
-        )
-
-        st.markdown("---")
-
-        pdf_bytes = generar_pdf(st.session_state.pilotos, opcion_pdf)
-
-        st.download_button(
-            label="⬇️ Descargar Reporte PDF",
-            data=pdf_bytes,
-            file_name=f"reporte_pilotos_{opcion_pdf.lower().replace(' ', '_')}.pdf",
-            mime="application/pdf",
-            type="primary"
-        )
+              
