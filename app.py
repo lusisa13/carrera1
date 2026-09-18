@@ -458,7 +458,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                         log = f"MODIFICACIÓN PILOTO: {piloto_actual['nombre']} -> {nuevo_nombre}"
                         st.session_state.historial.append(log)
 
-                        st.session_state.pilotos[seleccion] = {
+                        st.session_state.pilotos[seleccion] =
                             "nombre": nuevo_nombre,
                             "placa": nueva_placa if nueva_placa.strip() else "-",
                             "categoria": nueva_cat,
