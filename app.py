@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import json
 import os
 import base64
@@ -267,23 +268,21 @@ def generar_pdf(pilotos, tipo_reporte):
 
             pdf.ln(3)
 
-    # Exportación limpia de bytes
+    # Generación limpia y compatible de bytes del PDF
     try:
-        res = pdf.output()
-        if isinstance(res, (bytes, bytearray)):
-            return bytes(res)
-        elif isinstance(res, str):
-            return res.encode('latin-1')
+        out = pdf.output()
+        if out is None:
+            out = pdf.output(dest='S')
+        if isinstance(out, (bytes, bytearray)):
+            return bytes(out)
+        elif isinstance(out, str):
+            return out.encode('latin-1')
+        return bytes(out)
     except Exception:
-        pass
-
-    try:
-        res_str = pdf.output(dest='S')
-        if isinstance(res_str, str):
-            return res_str.encode('latin-1')
-        return bytes(res_str)
-    except Exception:
-        return bytes(pdf.output())
+        out = pdf.output(dest='S')
+        if isinstance(out, str):
+            return out.encode('latin-1')
+        return bytes(out)
 
 
 # ==========================================
@@ -374,7 +373,7 @@ if menu == "1. Registrar Piloto":
 
                 log = f"ALTA PILOTO: {nombre} | Placa: {placa} | Cat: {categoria} | Situación: {sit_texto} | Monto: ${monto}"
                 st.session_state.historial.append(log)
-                guardar_datos_disco() # Guardado en disco local
+                guardar_datos_disco()
                 st.success(f"¡Piloto {nombre} registrado con éxito!")
 
 
@@ -408,7 +407,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 p_borrado = st.session_state.pilotos.pop(seleccion)
                 log = f"BAJA PILOTO: {p_borrado['nombre']} | Placa: {p_borrado.get('placa','-')}"
                 st.session_state.historial.append(log)
-                guardar_datos_disco() # Guardado en disco local
+                guardar_datos_disco()
                 st.success("Piloto eliminado correctamente.")
                 st.rerun()
 
@@ -466,5 +465,4 @@ elif menu == "2. Modificar / Eliminar Piloto":
                             "monto": monto,
                             "medio": medio_pago,
                             "destinatario": dest,
-                            "situacion": sit_texto
-  
+                            "situacion": sit_te
