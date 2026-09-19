@@ -1,8 +1,13 @@
+import json
+import os
 import streamlit as st
 from fpdf import FPDF
 
+# Filepath del archivo de respaldo local
+ARCHIVO_LOCAL = "datos_caja_enduro.json"
+
 # Configuración de la página
-st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏍️", layout="wide")
+st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏎️", layout="wide")
 
 # Lista general de categorías
 CATEGORIAS = [
@@ -23,6 +28,29 @@ if "gastos" not in st.session_state:
 
 if "historial" not in st.session_state:
     st.session_state.historial = []
+
+# Cargar datos guardados previamente en el disco al iniciar la aplicación
+if os.path.exists(ARCHIVO_LOCAL) and "cargado" not in st.session_state:
+    try:
+        with open(ARCHIVO_LOCAL, "r", encoding="utf-8") as f:
+            datos_guardados = json.load(f)
+            st.session_state.pilotos = datos_guardados.get("pilotos", [])
+            st.session_state.gastos = datos_guardados.get("gastos", [])
+            st.session_state.historial = datos_guardados.get("historial", [])
+        st.session_state.cargado = True
+    except Exception:
+        pass
+
+
+def guardar_autoguardado():
+    """Guarda los datos en el archivo local del sistema."""
+    datos = {
+        "pilotos": st.session_state.pilotos,
+        "gastos": st.session_state.gastos,
+        "historial": st.session_state.historial
+    }
+    with open(ARCHIVO_LOCAL, "w", encoding="utf-8") as f:
+        json.dump(datos, f, ensure_ascii=False, indent=4)
 
 
 # Funciones auxiliares
@@ -222,6 +250,43 @@ def generar_pdf(pilotos, tipo_reporte):
 st.title("🏎️ Sistema de Caja - Enduro")
 st.caption("Gestión de inscripciones, pagos, gastos y reportes de la organización")
 
+# --- SECCIÓN EN LA BARRA LATERAL: RESPALDO Y BASE DE DATOS ---
+st.sidebar.header("📂 Base de Datos y Respaldo")
+
+# Opción A: Cargar archivo previo (Restaurar progreso)
+archivo_subido = st.sidebar.file_uploader(
+    "Importar base de datos (.json)", type=["json"]
+)
+if archivo_subido is not None:
+    try:
+        datos_cargados = json.load(archivo_subido)
+        st.session_state.pilotos = datos_cargados.get("pilotos", [])
+        st.session_state.gastos = datos_cargados.get("gastos", [])
+        st.session_state.historial = datos_cargados.get("historial", [])
+        guardar_autoguardado()
+        st.sidebar.success("¡Progreso restaurado exitosamente!")
+    except Exception:
+        st.sidebar.error("El archivo no tiene un formato JSON válido.")
+
+# Opción B: Descargar progreso actual al dispositivo
+datos_json = json.dumps(
+    {
+        "pilotos": st.session_state.pilotos,
+        "gastos": st.session_state.gastos,
+        "historial": st.session_state.historial
+    },
+    ensure_ascii=False,
+    indent=4
+)
+st.sidebar.download_button(
+    label="💾 Descargar copia de seguridad",
+    data=datos_json,
+    file_name="copia_de_seguridad_caja.json",
+    mime="application/json",
+)
+
+st.sidebar.markdown("---")
+
 opciones_menu = [
     "1. Registrar Piloto",
     "2. Modificar / Eliminar Piloto",
@@ -304,6 +369,8 @@ if menu == "1. Registrar Piloto":
 
                 log = f"ALTA PILOTO: {nombre} | Placa: {placa} | Cat: {categoria} | Situación: {sit_texto} | Monto: ${monto}"
                 st.session_state.historial.append(log)
+                
+                guardar_autoguardado()
                 st.success(f"¡Piloto {nombre} registrado con éxito!")
 
 
@@ -337,6 +404,8 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 p_borrado = st.session_state.pilotos.pop(seleccion)
                 log = f"BAJA PILOTO: {p_borrado['nombre']} | Placa: {p_borrado.get('placa','-')}"
                 st.session_state.historial.append(log)
+                
+                guardar_autoguardado()
                 st.success("Piloto eliminado correctamente.")
                 st.rerun()
 
@@ -396,6 +465,8 @@ elif menu == "2. Modificar / Eliminar Piloto":
                             "destinatario": dest,
                             "situacion": sit_texto
                         }
+                        
+                        guardar_autoguardado()
                         st.success("Piloto actualizado con éxito.")
                         st.rerun()
 
@@ -503,6 +574,8 @@ elif menu == "5. Gastos Extra":
                 else:
                     st.session_state.gastos.append({"descripcion": descripcion, "monto": monto_gasto})
                     st.session_state.historial.append(f"GASTO AGREGADO: '{descripcion}' | ${monto_gasto}")
+                    
+                    guardar_autoguardado()
                     st.success("Gasto registrado con éxito.")
 
     with tab2:
@@ -538,8 +611,8 @@ elif menu == "7. Exportar PDF":
         st.write("Selecciona el tipo de informe que deseas generar:")
 
         opciones_pdf = [
-            "Completo", 
-            "Nombre completo con placa y categoría", 
+            "Completo",
+            "Nombre completo con placa y categoría",
             "Nombre y datos de pago"
         ]
         opcion_pdf = st.radio("Opciones de Información del Reporte:", opciones_pdf)
@@ -548,7 +621,7 @@ elif menu == "7. Exportar PDF":
 
         try:
             pdf_bytes = generar_pdf(st.session_state.pilotos, opcion_pdf)
-            
+           
             st.download_button(
                 label="📥 Descargar Reporte PDF",
                 data=pdf_bytes,
@@ -557,4 +630,3 @@ elif menu == "7. Exportar PDF":
             )
         except Exception as e:
             st.error(f"Error al generar el PDF: {e}")
-            ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, "Pagado"),
