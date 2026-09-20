@@ -68,7 +68,7 @@ def resolver_situacion(opcion_sit, dia_mes=None, monto_custom=0.0, medio_op="Efe
         return monto, medio_op, dest_op, "Pagado"
 
     elif opcion_sit == "Solo Seguro":
-        return 40000.0, medio_op, dest_op, "Solo Seguro"
+        return 35000.0, medio_op, dest_op, "Solo Seguro"
 
     elif opcion_sit == "Monto Personalizado":
         return float(monto_custom), medio_op, dest_op, "Personalizado"
@@ -333,7 +333,7 @@ if menu == "1. Registrar Piloto":
             elif situacion_op == "Monto Personalizado":
                 monto_personalizado = st.number_input("Ingrese el Monto Personalizado ($):", min_value=0.0, value=0.0, step=1000.0)
             elif situacion_op == "Solo Seguro":
-                st.info("Monto fijo retenido por seguro: **$40.000**")
+                st.info("Monto fijo retenido por seguro: **$35.000**")
             elif situacion_op == "Indistinto / Nulo":
                 st.info("Monto sin especificar o nulo: **$0**")
             else:
@@ -491,7 +491,7 @@ elif menu == "3. Balance de Caja y Seguro":
         gratis = situaciones.count("Gratis")
 
         recaudacion_bruta = sum(p["monto"] for p in st.session_state.pilotos)
-        retencion_seguro = total_pilotos * 40000.0
+        retencion_seguro = total_pilotos * 35000.0
         neto_antes_gastos = recaudacion_bruta - retencion_seguro
         total_gastos = sum(g["monto"] for g in st.session_state.gastos)
         neto_final = neto_antes_gastos - total_gastos
@@ -513,7 +513,7 @@ elif menu == "3. Balance de Caja y Seguro":
 
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("Recaudación Bruta", f"${recaudacion_bruta:,.2f}")
-        col_m2.metric("Retención Seguro ($40k/u)", f"${retencion_seguro:,.2f}")
+        col_m2.metric("Retención Seguro ($35k/u)", f"${retencion_seguro:,.2f}")
         col_m3.metric("Neto Antes de Gastos", f"${neto_antes_gastos:,.2f}")
 
         col_m4, col_m5, col_m6 = st.columns(3)
@@ -535,7 +535,7 @@ elif menu == "4. Clasificación por Montos":
             ("Tramo 1: Del 7 al 12 ($110.000)", 110000.0, "Pagado"),
             ("Tramo 2: Del 13 al 17 ($130.000)", 130000.0, "Pagado"),
             ("Tramo 3: Del 18 al 19 ($140.000)", 140000.0, "Pagado"),
-            ("Solo Seguro ($40.000)", 40000.0, "Solo Seguro"),
+            ("Solo Seguro ($35.000)", 35000.0, "Solo Seguro"),
             ("Monto Personalizado", None, "Personalizado"),
             ("Indistinto / Nulo ($0)", 0.0, "Indistinto/Nulo"),
             ("Deudores ($0)", None, "Adeuda"),
