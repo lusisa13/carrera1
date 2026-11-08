@@ -342,8 +342,7 @@ st.caption("Gestión de inscripciones, pagos, gastos y reportes de la organizaci
 with st.sidebar.expander("💾 Copia de Seguridad / Base de Datos", expanded=False):
     st.markdown("### 📥 Importar Respaldo")
     archivo_subido = st.file_uploader(
-        "Subir copia (.json, .xlsx, .csv):", 
-        type=["json", "xlsx", "xls", "csv"]
+        "Subir copia (.json, .xlsx, .csv):"
     )
     if archivo_subido is not None:
         if st.button("Restaurar Datos", type="primary"):
