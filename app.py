@@ -115,13 +115,18 @@ def exportar_csv_pilotos():
 
 def procesar_importacion(archivo_subido):
     """Detecta la extensión del archivo (JSON, Excel o CSV) y restaura la base de datos."""
+    # Rebobinar la lectura del archivo subido
+    archivo_subido.seek(0)
     nombre = archivo_subido.name.lower()
     
     if nombre.endswith(".json"):
         datos = json.load(archivo_subido)
-        st.session_state.pilotos = [sanitizar_piloto(p) for p in datos.get("pilotos", [])]
-        st.session_state.gastos = [sanitizar_gasto(g) for g in datos.get("gastos", [])]
-        st.session_state.historial = [str(x) for x in datos.get("historial", [])]
+        if isinstance(datos, dict):
+            st.session_state.pilotos = [sanitizar_piloto(p) for p in datos.get("pilotos", [])]
+            st.session_state.gastos = [sanitizar_gasto(g) for g in datos.get("gastos", [])]
+            st.session_state.historial = [str(x) for x in datos.get("historial", [])]
+        elif isinstance(datos, list):
+            st.session_state.pilotos = [sanitizar_piloto(p) for p in datos]
 
     elif nombre.endswith(".xlsx") or nombre.endswith(".xls"):
         xls = pd.read_excel(archivo_subido, sheet_name=None)
@@ -275,7 +280,8 @@ def generar_pdf(pilotos, tipo_reporte):
                 pdf.ln()
                 global_idx += 1
             pdf.ln(3)
-             # ----------------------------------------------------
+
+    # ----------------------------------------------------
     # REPORTE: NOMBRE Y DATOS DE PAGO (SEPARADO POR MEDIO / DESTINATARIO)
     # ----------------------------------------------------
     else:
@@ -348,10 +354,10 @@ with st.sidebar.expander("💾 Copia de Seguridad / Base de Datos", expanded=Fal
         if st.button("Restaurar Datos", type="primary"):
             try:
                 procesar_importacion(archivo_subido)
-                st.success("¡Base de datos restaurada correctamente!")
-                st.rerun()
+                cant_restaurados = len(st.session_state.pilotos)
+                st.sidebar.success(f"¡Base de datos restaurada! ({cant_restaurados} pilotos cargados)")
             except Exception as e:
-                st.error(f"Error al importar archivo: {e}")
+                st.sidebar.error(f"Error al importar archivo: {e}")
 
     st.markdown("---")
     st.markdown("### 📤 Exportar Respaldo")
@@ -416,7 +422,6 @@ opciones_menu = [
     "7. Exportar PDF"
 ]
 menu = st.sidebar.radio("Menú Principal", opciones_menu)
-
 # ------------------------------------------
 # 1. REGISTRAR PILOTO
 # ------------------------------------------
@@ -719,6 +724,8 @@ elif menu == "5. Gastos Extra":
         else:
             st.table(st.session_state.gastos)
             st.write(f"**TOTAL GASTOS EXTRA:** ${sum(g['monto'] for g in st.session_state.gastos):,.2f}")
+
+
 # ------------------------------------------
 # 6. HISTORIAL DE CAMBIOS
 # ------------------------------------------
