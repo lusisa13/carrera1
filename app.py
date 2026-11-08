@@ -481,4 +481,4 @@ elif menu == "2. Modificar / Eliminar Piloto":
         col_a.write(f"**Placa / Dorsal:** {piloto_actual.get('placa', '-')}")
         col_a.write(f"**Categoría:** {piloto_actual.get('categoria', '-')}")
         col_a.write(f"**Situación:** {piloto_actual['situacion']}")
-        col_b.write(f"**Monto:** ${piloto_actual[
+       col_b.write(f"**Monto:** ${piloto_actual['monto']}")
