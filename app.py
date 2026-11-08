@@ -1,21 +1,24 @@
+import csv
+import io
 import json
 import os
-import io
-import pandas as pd
+import re
+import unicodedata
+
 import streamlit as st
 from fpdf import FPDF
-
-# Configuración de la página
-st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏎️", layout="wide")
 
 # Filepath del archivo de respaldo local
 ARCHIVO_LOCAL = "datos_caja_enduro.json"
 
+# Configuración de la página
+st.set_page_config(page_title="Sistema de Caja - Enduro", page_icon="🏎️", layout="wide")
+
 # Lista general de categorías
 CATEGORIAS = [
-    "Sénior A", "Senior B", "Júnior A", "Junior B", "Master A", "Master B", 
-    "Master C", "Master D", "Master Principiantes", "Master Leyenda", 
-    "Principiantes A1", "Principiantes A2", "Principiantes B", "Sub17", 
+    "Sénior A", "Senior B", "Júnior A", "Junior B", "Master A", "Master B",
+    "Master C", "Master D", "Master Principiantes", "Master Leyenda",
+    "Principiantes A1", "Principiantes A2", "Principiantes B", "Sub17",
     "Infantiles A", "Infantiles B", "Mini", "Damas", "Otra"
 ]
 
@@ -31,126 +34,28 @@ if "gastos" not in st.session_state:
 if "historial" not in st.session_state:
     st.session_state.historial = []
 
-def sanitizar_piloto(p):
-    """Asegura que todos los campos del piloto tengan tipos válidos."""
-    try:
-        monto_val = float(p.get("monto", 0.0))
-    except (ValueError, TypeError):
-        monto_val = 0.0
-        
-    return {
-        "nombre": str(p.get("nombre", "Sin Nombre")),
-        "placa": str(p.get("placa", "-")),
-        "categoria": str(p.get("categoria", "Otra")),
-        "monto": monto_val,
-        "medio": str(p.get("medio", "Ninguno")),
-        "destinatario": str(p.get("destinatario", "Ninguno")),
-        "situacion": str(p.get("situacion", "Indistinto/Nulo"))
-    }
-
-def sanitizar_gasto(g):
-    """Asegura que los gastos tengan montos numéricos válidos."""
-    try:
-        monto_val = float(g.get("monto", 0.0))
-    except (ValueError, TypeError):
-        monto_val = 0.0
-    return {
-        "descripcion": str(g.get("descripcion", "Gasto sin descripción")),
-        "monto": monto_val
-    }
-
 # Cargar datos guardados previamente en el disco al iniciar la aplicación
 if os.path.exists(ARCHIVO_LOCAL) and "cargado" not in st.session_state:
     try:
         with open(ARCHIVO_LOCAL, "r", encoding="utf-8") as f:
             datos_guardados = json.load(f)
-            st.session_state.pilotos = [sanitizar_piloto(p) for p in datos_guardados.get("pilotos", [])]
-            st.session_state.gastos = [sanitizar_gasto(g) for g in datos_guardados.get("gastos", [])]
-            st.session_state.historial = [str(x) for x in datos_guardados.get("historial", [])]
+            st.session_state.pilotos = datos_guardados.get("pilotos", [])
+            st.session_state.gastos = datos_guardados.get("gastos", [])
+            st.session_state.historial = datos_guardados.get("historial", [])
         st.session_state.cargado = True
     except Exception:
         pass
 
 
 def guardar_autoguardado():
-    """Guarda los datos en el archivo local del sistema de manera segura."""
-    try:
-        datos = {
-            "pilotos": st.session_state.pilotos,
-            "gastos": st.session_state.gastos,
-            "historial": st.session_state.historial
-        }
-        with open(ARCHIVO_LOCAL, "w", encoding="utf-8") as f:
-            json.dump(datos, f, ensure_ascii=False, indent=4)
-    except Exception:
-        pass
-
-
-# ==========================================
-# FUNCIONES DE IMPORTACIÓN Y EXPORTACIÓN MULTIFORMATO
-# ==========================================
-def exportar_excel():
-    """Genera un archivo Excel (.xlsx) con pestañas separadas para Pilotos, Gastos e Historial."""
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        pilotos_clean = [sanitizar_piloto(p) for p in st.session_state.pilotos]
-        gastos_clean = [sanitizar_gasto(g) for g in st.session_state.gastos]
-        
-        df_pilotos = pd.DataFrame(pilotos_clean) if pilotos_clean else pd.DataFrame(columns=["nombre", "placa", "categoria", "monto", "medio", "destinatario", "situacion"])
-        df_gastos = pd.DataFrame(gastos_clean) if gastos_clean else pd.DataFrame(columns=["descripcion", "monto"])
-        df_historial = pd.DataFrame({"log": st.session_state.historial}) if st.session_state.historial else pd.DataFrame(columns=["log"])
-        
-        df_pilotos.to_excel(writer, sheet_name="Pilotos", index=False)
-        df_gastos.to_excel(writer, sheet_name="Gastos", index=False)
-        df_historial.to_excel(writer, sheet_name="Historial", index=False)
-    return output.getvalue()
-
-
-def exportar_csv_pilotos():
-    """Genera un archivo CSV codificado en UTF-8 con la lista de pilotos."""
-    pilotos_clean = [sanitizar_piloto(p) for p in st.session_state.pilotos]
-    df_pilotos = pd.DataFrame(pilotos_clean) if pilotos_clean else pd.DataFrame(columns=["nombre", "placa", "categoria", "monto", "medio", "destinatario", "situacion"])
-    return df_pilotos.to_csv(index=False).encode('utf-8-sig')
-
-
-def procesar_importacion(archivo_subido):
-    """Detecta la extensión del archivo (JSON, Excel o CSV) y restaura la base de datos."""
-    # Rebobinar la lectura del archivo subido
-    archivo_subido.seek(0)
-    nombre = archivo_subido.name.lower()
-    
-    if nombre.endswith(".json"):
-        datos = json.load(archivo_subido)
-        if isinstance(datos, dict):
-            st.session_state.pilotos = [sanitizar_piloto(p) for p in datos.get("pilotos", [])]
-            st.session_state.gastos = [sanitizar_gasto(g) for g in datos.get("gastos", [])]
-            st.session_state.historial = [str(x) for x in datos.get("historial", [])]
-        elif isinstance(datos, list):
-            st.session_state.pilotos = [sanitizar_piloto(p) for p in datos]
-
-    elif nombre.endswith(".xlsx") or nombre.endswith(".xls"):
-        xls = pd.read_excel(archivo_subido, sheet_name=None)
-        if "Pilotos" in xls:
-            raw_pilotos = xls["Pilotos"].fillna("-").to_dict(orient="records")
-            st.session_state.pilotos = [sanitizar_piloto(p) for p in raw_pilotos]
-        elif len(xls.keys()) > 0:
-            primera_hoja = list(xls.keys())[0]
-            raw_pilotos = xls[primera_hoja].fillna("-").to_dict(orient="records")
-            st.session_state.pilotos = [sanitizar_piloto(p) for p in raw_pilotos]
-            
-        if "Gastos" in xls:
-            raw_gastos = xls["Gastos"].fillna("").to_dict(orient="records")
-            st.session_state.gastos = [sanitizar_gasto(g) for g in raw_gastos]
-            
-        if "Historial" in xls and "log" in xls["Historial"]:
-            st.session_state.historial = xls["Historial"]["log"].dropna().astype(str).tolist()
-
-    elif nombre.endswith(".csv"):
-        df = pd.read_csv(archivo_subido).fillna("-")
-        raw_pilotos = df.to_dict(orient="records")
-        st.session_state.pilotos = [sanitizar_piloto(p) for p in raw_pilotos]
-        
-    guardar_autoguardado()
+    """Guarda los datos en el archivo local del sistema."""
+    datos = {
+        "pilotos": st.session_state.pilotos,
+        "gastos": st.session_state.gastos,
+        "historial": st.session_state.historial
+    }
+    with open(ARCHIVO_LOCAL, "w", encoding="utf-8") as f:
+        json.dump(datos, f, ensure_ascii=False, indent=4)
 
 
 # Funciones auxiliares
@@ -179,7 +84,7 @@ def resolver_situacion(opcion_sit, dia_mes=None, monto_custom=0.0, medio_op="Efe
     elif opcion_sit == "Adeuda":
         return 0.0, "Ninguno", "Ninguno", "Adeuda"
 
-    else: # Gratis
+    else:  # Gratis
         return 0.0, "Ninguno", "Ninguno", "Gratis"
 
 
@@ -201,13 +106,11 @@ def generar_pdf(pilotos, tipo_reporte):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    
+
     # Encabezado principal
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 10, limpiar_texto("Sistema de Caja - Enduro"), ln=True, align="C")
     pdf.set_font("Helvetica", "I", 11)
-
-    pilotos_clean = [sanitizar_piloto(p) for p in pilotos]
 
     # ----------------------------------------------------
     # REPORTE COMPLETO
@@ -215,9 +118,10 @@ def generar_pdf(pilotos, tipo_reporte):
     if tipo_reporte == "Completo":
         pdf.cell(0, 8, limpiar_texto("Reporte Completo de Pilotos"), ln=True, align="C")
         pdf.ln(5)
-        
+
+        # Ordenar por Categoría respetando el orden oficial
         pilotos_ordenados = sorted(
-            pilotos_clean, 
+            pilotos,
             key=lambda x: CATEGORIAS.index(x["categoria"]) if x.get("categoria") in CATEGORIAS else 999
         )
 
@@ -256,14 +160,16 @@ def generar_pdf(pilotos, tipo_reporte):
 
         global_idx = 1
         for cat in CATEGORIAS:
-            pilotos_cat = [p for p in pilotos_clean if p.get("categoria") == cat]
+            pilotos_cat = [p for p in pilotos if p.get("categoria") == cat]
             if not pilotos_cat:
                 continue
 
+            # Título de Categoría
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_fill_color(200, 220, 240)
             pdf.cell(0, 7, limpiar_texto(f" CATEGORIA: {cat.upper()} ({len(pilotos_cat)} pilotos)"), border=1, ln=True, fill=True)
 
+            # Encabezados de Tabla
             pdf.set_font("Helvetica", "B", 9)
             pdf.set_fill_color(240, 240, 240)
             widths = [15, 120, 55]
@@ -272,6 +178,7 @@ def generar_pdf(pilotos, tipo_reporte):
                 pdf.cell(widths[i], 7, limpiar_texto(h), border=1, align="C", fill=True)
             pdf.ln()
 
+            # Filas de Pilotos por Categoría
             pdf.set_font("Helvetica", "", 9)
             for p in pilotos_cat:
                 pdf.cell(widths[0], 7, str(global_idx), border=1, align="C")
@@ -293,32 +200,35 @@ def generar_pdf(pilotos, tipo_reporte):
             ("Transferencia a Mercedes", lambda p: p.get("medio") == "Transferencia" and p.get("destinatario") == "Mercedes"),
             ("Transferencia a Marcelo", lambda p: p.get("medio") == "Transferencia" and p.get("destinatario") == "Marcelo"),
             ("Otras Transferencias / Sin Pago", lambda p: not (
-                p.get("medio") == "Efectivo" or 
+                p.get("medio") == "Efectivo" or
                 (p.get("medio") == "Transferencia" and p.get("destinatario") in ["Mercedes", "Marcelo"])
             ))
         ]
 
         global_idx = 1
         for titulo_sec, filtro in secciones:
-            pilotos_sec = [p for p in pilotos_clean if filtro(p)]
+            pilotos_sec = [p for p in pilotos if filtro(p)]
             if not pilotos_sec:
                 continue
 
             total_sec = sum(p.get("monto", 0.0) for p in pilotos_sec)
 
+            # Título de Sección
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_fill_color(220, 235, 220)
             pdf.cell(0, 7, limpiar_texto(f" {titulo_sec.upper()} ({len(pilotos_sec)} registros) - Total: ${total_sec:,.0f}"), border=1, ln=True, fill=True)
 
+            # Encabezados
             widths = [10, 65, 45, 35, 35]
             headers = ["#", "Nombre Completo", "Categoria", "Situacion", "Monto ($)"]
-            
+
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_fill_color(240, 240, 240)
             for i, h in enumerate(headers):
                 pdf.cell(widths[i], 7, limpiar_texto(h), border=1, align="C", fill=True)
             pdf.ln()
 
+            # Filas
             pdf.set_font("Helvetica", "", 8)
             for p in pilotos_sec:
                 pdf.cell(widths[0], 7, str(global_idx), border=1, align="C")
@@ -330,6 +240,7 @@ def generar_pdf(pilotos, tipo_reporte):
                 global_idx += 1
             pdf.ln(4)
 
+    # Exportación robusta a bytes
     out = pdf.output()
     if isinstance(out, str):
         return out.encode('latin1')
@@ -339,76 +250,237 @@ def generar_pdf(pilotos, tipo_reporte):
 
 
 # ==========================================
+# RESPALDO: DESCARGAR E IMPORTAR (JSON, Excel, CSV, Word)
+# ==========================================
+CAMPOS_PILOTO = ["nombre", "placa", "categoria", "situacion", "monto", "medio", "destinatario"]
+CAMPOS_GASTO = ["descripcion", "monto"]
+
+
+def _clave(t):
+    t = unicodedata.normalize("NFD", str(t))
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return t.strip().lower()
+
+
+def _num(v):
+    if v is None or v == "":
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).replace("$", "").replace(" ", "")
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
+        s = s.replace(".", "")
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _norm_piloto(d):
+    return {
+        "nombre": str(d.get("nombre", "") or "").strip(),
+        "placa": str(d.get("placa", "-") or "-").strip(),
+        "categoria": str(d.get("categoria", "Otra") or "Otra").strip(),
+        "monto": _num(d.get("monto")),
+        "medio": str(d.get("medio", "Ninguno") or "Ninguno").strip(),
+        "destinatario": str(d.get("destinatario", "Ninguno") or "Ninguno").strip(),
+        "situacion": str(d.get("situacion", "Gratis") or "Gratis").strip(),
+    }
+
+
+def _norm_gasto(d):
+    return {
+        "descripcion": str(d.get("descripcion", "") or "").strip(),
+        "monto": _num(d.get("monto")),
+    }
+
+
+def _armar(pilotos, gastos, historial):
+    return {
+        "pilotos": [_norm_piloto(p) for p in pilotos if str(p.get("nombre", "") or "").strip()],
+        "gastos": [_norm_gasto(g) for g in gastos if str(g.get("descripcion", "") or "").strip()],
+        "historial": [str(h) for h in historial if str(h).strip()],
+    }
+
+
+def _clasificar(tablas):
+    """tablas: lista de (encabezados, filas). Detecta qué es cada tabla."""
+    pilotos, gastos, historial = [], [], []
+    for headers, filas in tablas:
+        hs = [_clave(h) for h in headers]
+        dicts = [dict(zip(hs, f)) for f in filas]
+        if "nombre" in hs:
+            pilotos += dicts
+        elif "descripcion" in hs:
+            gastos += dicts
+        elif "registro" in hs:
+            historial += [d.get("registro", "") for d in dicts]
+    return _armar(pilotos, gastos, historial)
+
+
+def leer_respaldo(archivo):
+    nombre = archivo.name.lower()
+    raw = archivo.getvalue()
+
+    if nombre.endswith(".json"):
+        d = json.loads(raw.decode("utf-8-sig"))
+        if not isinstance(d, dict):
+            raise ValueError("El JSON no tiene el formato esperado.")
+        datos = _armar(d.get("pilotos", []), d.get("gastos", []), d.get("historial", []))
+
+    elif nombre.endswith((".xlsx", ".xlsm")):
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            raise ValueError("Falta agregar 'openpyxl' al requirements.txt")
+        wb = load_workbook(io.BytesIO(raw), data_only=True)
+        tablas = []
+        for ws in wb.worksheets:
+            filas = [list(r) for r in ws.iter_rows(values_only=True)
+                     if any(c not in (None, "") for c in r)]
+            if filas:
+                tablas.append((filas[0], filas[1:]))
+        datos = _clasificar(tablas)
+
+    elif nombre.endswith(".csv"):
+        texto = raw.decode("utf-8-sig", errors="replace")
+        try:
+            dialecto = csv.Sniffer().sniff(texto[:2000], delimiters=",;\t")
+        except csv.Error:
+            dialecto = csv.excel
+        filas = [f for f in csv.reader(io.StringIO(texto), dialecto) if any(f)]
+        datos = _clasificar([(filas[0], filas[1:])]) if filas else _armar([], [], [])
+
+    elif nombre.endswith(".docx"):
+        try:
+            from docx import Document
+        except ImportError:
+            raise ValueError("Falta agregar 'python-docx' al requirements.txt")
+        doc = Document(io.BytesIO(raw))
+        tablas = []
+        for t in doc.tables:
+            filas = [[c.text for c in r.cells] for r in t.rows]
+            if filas:
+                tablas.append((filas[0], filas[1:]))
+        datos = _clasificar(tablas)
+
+    else:
+        raise ValueError("Formato no soportado. Usá JSON, Excel (.xlsx), CSV o Word (.docx). "
+                         "El PDF es solo de lectura y no se puede importar.")
+
+    if not (datos["pilotos"] or datos["gastos"] or datos["historial"]):
+        raise ValueError("No encontré datos reconocibles en el archivo.")
+    return datos
+
+
+def exportar_excel(datos):
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pilotos"
+    ws.append(CAMPOS_PILOTO)
+    for p in datos["pilotos"]:
+        ws.append([p.get(c, "") for c in CAMPOS_PILOTO])
+    ws = wb.create_sheet("Gastos")
+    ws.append(CAMPOS_GASTO)
+    for g in datos["gastos"]:
+        ws.append([g.get(c, "") for c in CAMPOS_GASTO])
+    ws = wb.create_sheet("Historial")
+    ws.append(["registro"])
+    for h in datos["historial"]:
+        ws.append([h])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def exportar_word(datos):
+    from docx import Document
+    doc = Document()
+    doc.add_heading("Respaldo - Sistema de Caja Enduro", level=1)
+
+    def tabla(titulo, campos, filas):
+        doc.add_heading(titulo, level=2)
+        t = doc.add_table(rows=1, cols=len(campos))
+        t.style = "Table Grid"
+        for i, c in enumerate(campos):
+            t.rows[0].cells[i].text = c
+        for fila in filas:
+            celdas = t.add_row().cells
+            for i, v in enumerate(fila):
+                celdas[i].text = str(v)
+
+    tabla("Pilotos", CAMPOS_PILOTO,
+          [[p["monto"] if c == "monto" else p.get(c, "") for c in CAMPOS_PILOTO]
+           for p in datos["pilotos"]])
+    tabla("Gastos", CAMPOS_GASTO, [[g["descripcion"], g["monto"]] for g in datos["gastos"]])
+    tabla("Historial", ["registro"], [[h] for h in datos["historial"]])
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+# ==========================================
 # INTERFAZ Y NAVEGACIÓN
 # ==========================================
 st.title("🏎️ Sistema de Caja - Enduro")
 st.caption("Gestión de inscripciones, pagos, gastos y reportes de la organización")
 
-# --- SECCIÓN EN LA BARRA LATERAL: RESPALDO MULTIFORMATO Y BASE DE DATOS ---
-with st.sidebar.expander("💾 Copia de Seguridad / Base de Datos", expanded=False):
-    st.markdown("### 📥 Importar Respaldo")
-    archivo_subido = st.file_uploader(
-        "Subir copia (.json, .xlsx, .csv):"
-    )
-    if archivo_subido is not None:
-        if st.button("Restaurar Datos", type="primary"):
-            try:
-                procesar_importacion(archivo_subido)
-                cant_restaurados = len(st.session_state.pilotos)
-                st.sidebar.success(f"¡Base de datos restaurada! ({cant_restaurados} pilotos cargados)")
-            except Exception as e:
-                st.sidebar.error(f"Error al importar archivo: {e}")
+# --- SECCIÓN EN LA BARRA LATERAL: RESPALDO Y BASE DE DATOS ---
+st.sidebar.header("📂 Respaldo de datos")
 
-    st.markdown("---")
-    st.markdown("### 📤 Exportar Respaldo")
-    formato_export = st.selectbox(
-        "Selecciona el formato de copia:",
-        ["JSON (.json)", "Excel (.xlsx)", "CSV (.csv)", "PDF (.pdf)"]
-    )
+datos_resp = _armar(st.session_state.pilotos, st.session_state.gastos, st.session_state.historial)
 
-    if formato_export == "JSON (.json)":
-        datos_json = json.dumps(
-            {
-                "pilotos": st.session_state.pilotos,
-                "gastos": st.session_state.gastos,
-                "historial": st.session_state.historial
-            },
-            ensure_ascii=False,
-            indent=4
+formato = st.sidebar.selectbox(
+    "Descargar copia en:",
+    ["JSON", "Excel (.xlsx)", "Word (.docx)", "PDF (solo lectura)"],
+    key="formato_respaldo",
+)
+try:
+    if formato == "JSON":
+        data_d = json.dumps(datos_resp, ensure_ascii=False, indent=4).encode("utf-8")
+        nom_d, mime_d = "copia_de_seguridad_caja.json", "application/json"
+    elif formato.startswith("Excel"):
+        data_d = exportar_excel(datos_resp)
+        nom_d = "copia_de_seguridad_caja.xlsx"
+        mime_d = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif formato.startswith("Word"):
+        data_d = exportar_word(datos_resp)
+        nom_d = "copia_de_seguridad_caja.docx"
+        mime_d = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        data_d = generar_pdf(st.session_state.pilotos, "Completo")
+        nom_d, mime_d = "copia_de_seguridad_caja.pdf", "application/pdf"
+    st.sidebar.download_button("💾 Descargar copia de seguridad", data=data_d,
+                               file_name=nom_d, mime=mime_d)
+except Exception as e:
+    st.sidebar.error(f"No se pudo generar la copia: {e}")
+
+st.sidebar.markdown("---")
+
+archivo_subido = st.sidebar.file_uploader(
+    "Importar copia de seguridad",
+    type=["json", "xlsx", "xlsm", "csv", "docx"],
+    key="uploader_respaldo",
+)
+if archivo_subido is not None:
+    try:
+        nuevos = leer_respaldo(archivo_subido)
+    except Exception as e:
+        st.sidebar.error(f"No se pudo leer el archivo: {e}")
+    else:
+        st.sidebar.info(
+            f"Archivo leído: {len(nuevos['pilotos'])} pilotos, "
+            f"{len(nuevos['gastos'])} gastos, {len(nuevos['historial'])} registros."
         )
-        st.download_button(
-            label="💾 Descargar copia JSON",
-            data=datos_json,
-            file_name="respaldo_caja_enduro.json",
-            mime="application/json"
-        )
-    elif formato_export == "Excel (.xlsx)":
-        excel_bytes = exportar_excel()
-        st.download_button(
-            label="💾 Descargar copia Excel",
-            data=excel_bytes,
-            file_name="respaldo_caja_enduro.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    elif formato_export == "CSV (.csv)":
-        csv_bytes = exportar_csv_pilotos()
-        st.download_button(
-            label="💾 Descargar CSV Pilotos",
-            data=csv_bytes,
-            file_name="pilotos_caja_enduro.csv",
-            mime="text/csv"
-        )
-    elif formato_export == "PDF (.pdf)":
-        if st.session_state.pilotos:
-            pdf_bytes = generar_pdf(st.session_state.pilotos, "Completo")
-            st.download_button(
-                label="💾 Descargar PDF Completo",
-                data=pdf_bytes,
-                file_name="reporte_completo_enduro.pdf",
-                mime="application/pdf"
-            )
-        else:
-            st.info("No hay datos para generar el PDF.")
+        if st.sidebar.button("✅ Reemplazar datos actuales con este archivo"):
+            st.session_state.pilotos = nuevos["pilotos"]
+            st.session_state.gastos = nuevos["gastos"]
+            st.session_state.historial = nuevos["historial"]
+            guardar_autoguardado()
+            st.sidebar.success("¡Datos restaurados!")
 
 st.sidebar.markdown("---")
 
@@ -422,6 +494,7 @@ opciones_menu = [
     "7. Exportar PDF"
 ]
 menu = st.sidebar.radio("Menú Principal", opciones_menu)
+
 # ------------------------------------------
 # 1. REGISTRAR PILOTO
 # ------------------------------------------
@@ -441,7 +514,7 @@ if menu == "1. Registrar Piloto":
             categoria = st.selectbox("Categoría:", CATEGORIAS)
 
         col1, col2 = st.columns(2)
-        
+
         dia_pago = None
         tarifa_manual = 110000.0
         monto_personalizado = 0.0
@@ -481,7 +554,7 @@ if menu == "1. Registrar Piloto":
                     situacion_op, dia_pago, monto_personalizado, medio, destinatario, tarifa_manual
                 )
 
-                nuevo_piloto = sanitizar_piloto({
+                st.session_state.pilotos.append({
                     "nombre": nombre,
                     "placa": placa if placa.strip() else "-",
                     "categoria": categoria,
@@ -491,11 +564,9 @@ if menu == "1. Registrar Piloto":
                     "situacion": sit_texto
                 })
 
-                st.session_state.pilotos.append(nuevo_piloto)
-
                 log = f"ALTA PILOTO: {nombre} | Placa: {placa} | Cat: {categoria} | Situación: {sit_texto} | Monto: ${monto}"
                 st.session_state.historial.append(log)
-                
+
                 guardar_autoguardado()
                 st.success(f"¡Piloto {nombre} registrado con éxito!")
 
@@ -509,10 +580,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
     if not st.session_state.pilotos:
         st.info("No hay pilotos registrados.")
     else:
-        pilotos_clean = [sanitizar_piloto(p) for p in st.session_state.pilotos]
-        st.session_state.pilotos = pilotos_clean
-
-        nombres_lista = [f"{i+1}. {p['nombre']} (Placa: {p.get('placa','-')}) - ${p['monto']:,.0f}" for i, p in enumerate(st.session_state.pilotos)]
+        nombres_lista = [f"{i+1}. {p['nombre']} (Placa: {p.get('placa','-')}) - ${p['monto']}" for i, p in enumerate(st.session_state.pilotos)]
         seleccion = st.selectbox("Seleccione el piloto:", range(len(nombres_lista)), format_func=lambda x: nombres_lista[x])
 
         piloto_actual = st.session_state.pilotos[seleccion]
@@ -522,7 +590,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
         col_a.write(f"**Placa / Dorsal:** {piloto_actual.get('placa', '-')}")
         col_a.write(f"**Categoría:** {piloto_actual.get('categoria', '-')}")
         col_a.write(f"**Situación:** {piloto_actual['situacion']}")
-        col_b.write(f"**Monto:** ${piloto_actual['monto']:,.0f}")
+        col_b.write(f"**Monto:** ${piloto_actual['monto']}")
         col_b.write(f"**Medio:** {piloto_actual['medio']}")
         col_b.write(f"**Para:** {piloto_actual['destinatario']}")
 
@@ -533,7 +601,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 p_borrado = st.session_state.pilotos.pop(seleccion)
                 log = f"BAJA PILOTO: {p_borrado['nombre']} | Placa: {p_borrado.get('placa','-')}"
                 st.session_state.historial.append(log)
-                
+
                 guardar_autoguardado()
                 st.success("Piloto eliminado correctamente.")
                 st.rerun()
@@ -546,7 +614,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                 col_m1, col_m2, col_m3 = st.columns([2, 1, 1])
                 nuevo_nombre = col_m1.text_input("Nuevo nombre:", value=piloto_actual['nombre'])
                 nueva_placa = col_m2.text_input("Nueva placa:", value=piloto_actual.get('placa', ''))
-               
+
                 cat_actual = piloto_actual.get('categoria', 'Sénior A')
                 idx_cat = CATEGORIAS.index(cat_actual) if cat_actual in CATEGORIAS else 0
                 nueva_cat = col_m3.selectbox("Nueva categoría:", CATEGORIAS, index=idx_cat)
@@ -585,7 +653,7 @@ elif menu == "2. Modificar / Eliminar Piloto":
                         log = f"MODIFICACIÓN PILOTO: {piloto_actual['nombre']} -> {nuevo_nombre}"
                         st.session_state.historial.append(log)
 
-                        st.session_state.pilotos[seleccion] = sanitizar_piloto({
+                        st.session_state.pilotos[seleccion] = {
                             "nombre": nuevo_nombre,
                             "placa": nueva_placa if nueva_placa.strip() else "-",
                             "categoria": nueva_cat,
@@ -593,8 +661,8 @@ elif menu == "2. Modificar / Eliminar Piloto":
                             "medio": medio_pago,
                             "destinatario": dest,
                             "situacion": sit_texto
-                        })
-                        
+                        }
+
                         guardar_autoguardado()
                         st.success("Piloto actualizado con éxito.")
                         st.rerun()
@@ -606,8 +674,6 @@ elif menu == "2. Modificar / Eliminar Piloto":
 elif menu == "3. Balance de Caja y Seguro":
     st.header("📊 Estadísticas y Cierre de Caja")
 
-    pilotos_clean = [sanitizar_piloto(p) for p in st.session_state.pilotos]
-    st.session_state.pilotos = pilotos_clean
     total_pilotos = len(st.session_state.pilotos)
 
     if total_pilotos == 0:
@@ -624,9 +690,6 @@ elif menu == "3. Balance de Caja y Seguro":
         recaudacion_bruta = sum(p["monto"] for p in st.session_state.pilotos)
         retencion_seguro = total_pilotos * 35000.0
         neto_antes_gastos = recaudacion_bruta - retencion_seguro
-        
-        gastos_clean = [sanitizar_gasto(g) for g in st.session_state.gastos]
-        st.session_state.gastos = gastos_clean
         total_gastos = sum(g["monto"] for g in st.session_state.gastos)
         neto_final = neto_antes_gastos - total_gastos
 
@@ -661,9 +724,6 @@ elif menu == "3. Balance de Caja y Seguro":
 # ------------------------------------------
 elif menu == "4. Clasificación por Montos":
     st.header("📋 Clasificación y Auditoría de Pilotos")
-
-    pilotos_clean = [sanitizar_piloto(p) for p in st.session_state.pilotos]
-    st.session_state.pilotos = pilotos_clean
 
     if not st.session_state.pilotos:
         st.info("No hay pilotos registrados.")
@@ -709,16 +769,13 @@ elif menu == "5. Gastos Extra":
                 if len(descripcion.strip()) < 2:
                     st.error("La descripción debe tener al menos 2 caracteres.")
                 else:
-                    nuevo_g = sanitizar_gasto({"descripcion": descripcion, "monto": monto_gasto})
-                    st.session_state.gastos.append(nuevo_g)
+                    st.session_state.gastos.append({"descripcion": descripcion, "monto": monto_gasto})
                     st.session_state.historial.append(f"GASTO AGREGADO: '{descripcion}' | ${monto_gasto}")
-                    
+
                     guardar_autoguardado()
                     st.success("Gasto registrado con éxito.")
 
     with tab2:
-        gastos_clean = [sanitizar_gasto(g) for g in st.session_state.gastos]
-        st.session_state.gastos = gastos_clean
         if not st.session_state.gastos:
             st.info("No hay gastos registrados.")
         else:
@@ -761,7 +818,7 @@ elif menu == "7. Exportar PDF":
 
         try:
             pdf_bytes = generar_pdf(st.session_state.pilotos, opcion_pdf)
-           
+
             st.download_button(
                 label="📥 Descargar Reporte PDF",
                 data=pdf_bytes,
